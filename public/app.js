@@ -36,8 +36,10 @@ const map = L.map("map", {
   maxBoundsViscosity: 1.0,
   maxZoom: 12,
 });
-// minZoom = livello a cui il mondo intero riempie la viewport
-const worldZoom = Math.ceil(map.getBoundsZoom(WORLD_BOUNDS, true));
+// minZoom = livello a cui il mondo intero riempie la viewport.
+// Math.floor (non ceil): ceil può arrotondare a un livello troppo stretto,
+// impedendo di vedere l'intero globo con i suoi margini.
+const worldZoom = Math.floor(map.getBoundsZoom(WORLD_BOUNDS, true));
 map.setMinZoom(worldZoom);
 map.fitBounds(WORLD_BOUNDS);
 // Basemap geo-politica Esri World Dark Gray: confini e nomi degli stati
@@ -322,9 +324,9 @@ async function loadOpenMeteoLayer() {
  * generato da scripts/fetch_era5.py. Se il file non esiste (501) non si
  * mostra nulla e non è un errore. */
 async function loadEra5Layer() {
-  if (!PROVIDERS.era5.enabled || backend === null || !backend.era5) return;
+  if (!PROVIDERS.era5.enabled || backend === null || !backend.era5) return null;
   const res = await fetch(PROVIDERS.era5.url);
-  if (!res.ok) return;
+  if (!res.ok) return null;
   const gridJson = await res.json(); // [{lat, lon, anomaly}, ...]
   // griglia fitta: raggio/blur ridotti rispetto al layer Open-Meteo
   const era5Layer = L.layerGroup([
@@ -335,6 +337,7 @@ async function loadEra5Layer() {
     ),
   ]);
   layersControl.addBaseLayer(era5Layer, LAYER_NAMES.era5);
+  return era5Layer;
 }
 
 /* NOAA CDO (clima.md §2): click sulla mappa (fuori dai marker) → dati della
@@ -514,12 +517,20 @@ document.addEventListener("keydown", (e) => {
 
 (async () => {
   backend = await detectBackend();
-  const jobs = [];
+  // Sequenziale (non Promise.all): l'ordine di registrazione dei base-layer
+  // nel controllo dev'essere deterministico — prima Open-Meteo (default), poi ERA5.
+  let omOk = false;
   if (PROVIDERS.openMeteo.enabled) {
-    jobs.push(
-      loadOpenMeteoLayer().catch((err) => setStatus(`Errore Open-Meteo: ${err.message}`, true))
+    omOk = await loadOpenMeteoLayer().then(
+      () => true,
+      (err) => { setStatus(`Errore Open-Meteo: ${err.message}`, true); return false; }
     );
   }
-  jobs.push(loadEra5Layer().catch(() => { /* ERA5 assente: nessun errore in UI */ }));
-  await Promise.all(jobs);
+  const era5Layer = await loadEra5Layer().catch(() => null);
+  // Se Open-Meteo non è disponibile ma ERA5 sì, attiva ERA5 così la mappa
+  // non resta vuota in attesa di un click sul selettore.
+  if (!omOk && era5Layer) {
+    era5Layer.addTo(map);
+    updateLegend("ERA5 (Copernicus CDS)");
+  }
 })();
