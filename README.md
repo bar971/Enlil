@@ -43,6 +43,8 @@ npx wrangler dev                         # simulazione locale del Worker su :878
 
 Componenti: Worker `enlil` (`worker/index.js`), statici da `public/` (binding `ASSETS`), cache su KV `enlil-cache` (binding `ENLIL_CACHE`). Il dataset ERA5 è un asset statico (`public/data/era5-grid.json`), servito da `/api/era5`.
 
+Il repo GitHub è collegato a **Workers Builds**: ogni push su `master` triggera automaticamente build e deploy (deploy command `npx wrangler deploy`).
+
 ### ERA5 / Copernicus CDS (mappa grigliata ad alta risoluzione)
 1. Account gratuito su https://cds.climate.copernicus.eu
 2. Personal Access Token in `~/.cdsapirc`:
