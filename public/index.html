@@ -21,10 +21,10 @@
   <main>
     <section id="map-section">
       <div id="map"></div>
-      <div id="map-status" class="status">Caricamento dati Open-Meteo…</div>
+      <div id="map-status" class="status" role="status" aria-live="polite">Caricamento dati Open-Meteo…</div>
     </section>
 
-    <button id="toggle-chart" class="toggle-btn">Serie storiche globali (GISTEMP · HadCRUT5 · Berkeley Earth)</button>
+    <button id="toggle-chart" class="toggle-btn" aria-controls="chart-section" aria-expanded="false">Serie storiche globali (GISTEMP · HadCRUT5 · Berkeley Earth)</button>
 
     <aside id="chart-section" aria-label="Pannello serie storiche">
       <button id="close-chart" class="close-btn" aria-label="Chiudi pannello">×</button>

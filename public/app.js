@@ -467,17 +467,28 @@ async function renderChart() {
 // Grafico: pannello laterale a scomparsa, renderizzato lazy alla prima
 // apertura (Chart.js ha bisogno del canvas visibile per dimensionarsi)
 let chartRendered = false;
+const toggleChartBtn = document.getElementById("toggle-chart");
 function toggleChart(force) {
   const sec = document.getElementById("chart-section");
   const show = force !== undefined ? force : !sec.classList.contains("open");
   sec.classList.toggle("open", show);
+  toggleChartBtn.setAttribute("aria-expanded", String(show));
   if (show && !chartRendered && PROVIDERS.gistemp.enabled) {
     chartRendered = true;
     renderChart().catch((err) => setChartStatus(`Errore grafico: ${err.message}`, true));
   }
+  // gestione focus: all'apertura entra nel pannello, alla chiusura torna al toggle
+  if (show) document.getElementById("close-chart").focus();
+  else toggleChartBtn.focus();
 }
-document.getElementById("toggle-chart").addEventListener("click", () => toggleChart());
+toggleChartBtn.addEventListener("click", () => toggleChart());
 document.getElementById("close-chart").addEventListener("click", () => toggleChart(false));
+// Esc chiude il pannello quando è aperto
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && document.getElementById("chart-section").classList.contains("open")) {
+    toggleChart(false);
+  }
+});
 
 (async () => {
   backend = await detectBackend();
