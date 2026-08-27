@@ -84,7 +84,8 @@ def main():
     delta = delta.coarsen(latitude=10, longitude=10, boundary="trim").mean()
 
     records = [
-        {"lat": round(float(lat), 2), "lon": round(float(lon), 2), "anomaly": round(float(delta.sel(latitude=lat, longitude=lon)), 3)}
+        # ERA5 usa longitudini 0..360: normalizza a -180..180 per Leaflet
+        {"lat": round(float(lat), 2), "lon": round(float(lon if lon <= 180 else lon - 360), 2), "anomaly": round(float(delta.sel(latitude=lat, longitude=lon)), 3)}
         for lat in delta.latitude for lon in delta.longitude
     ]
     with open(OUT_FILE, "w") as f:

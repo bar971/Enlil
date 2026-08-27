@@ -57,7 +57,7 @@ main {
   color: #8a96a5;
 }
 
-/* Pulsante per mostrare/nascondere il grafico */
+/* Pulsante per aprire il pannello delle serie storiche */
 .toggle-btn {
   margin: 0.9rem 0;
   padding: 0.55rem 1rem;
@@ -71,7 +71,69 @@ main {
 
 .toggle-btn:hover { background: #232f41; }
 
-#chart-section { margin-top: 0.5rem; }
+/* Pannello laterale a scomparsa per il grafico */
+#chart-section {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  height: 100dvh;
+  width: min(520px, 94vw);
+  margin: 0;
+  border-radius: 0;
+  transform: translateX(105%);
+  transition: transform 0.25s ease;
+  z-index: 1500; /* sopra i controlli Leaflet */
+  overflow-y: auto;
+  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.5);
+}
+
+#chart-section.open { transform: translateX(0); }
+
+.close-btn {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.8rem;
+  background: none;
+  border: none;
+  color: #9aa7b5;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.close-btn:hover { color: #fff; }
+
+/* Legenda mappa */
+.legend {
+  background: rgba(16, 21, 28, 0.9);
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.legend .bar {
+  height: 10px;
+  width: 160px;
+  border-radius: 5px;
+  background: linear-gradient(to right, #2c7fb0, #fee08b, #d7301f);
+  margin-bottom: 0.3rem;
+}
+
+.legend-src {
+  color: #8a96a5;
+  font-size: 0.72rem;
+}
+
+/* Selettore layer in tema scuro */
+.leaflet-control-layers {
+  background: rgba(16, 21, 28, 0.92);
+  color: #cdd6e0;
+  border: 1px solid #344154;
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
 
 /* Popup dei marker: valori con didascalia */
 .popup-row {
@@ -96,19 +158,3 @@ main {
   align-self: center;
 }
 
-/* Legenda mappa */
-.legend {
-  background: rgba(16, 21, 28, 0.9);
-  padding: 0.6rem 0.8rem;
-  border-radius: 8px;
-  font-size: 0.8rem;
-  line-height: 1.5;
-}
-
-.legend .bar {
-  height: 10px;
-  width: 160px;
-  border-radius: 5px;
-  background: linear-gradient(to right, #2c7fb0, #fee08b, #d7301f);
-  margin-bottom: 0.3rem;
-}

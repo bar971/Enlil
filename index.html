@@ -22,9 +22,10 @@
       <div id="map-status" class="status">Caricamento dati Open-Meteo…</div>
     </section>
 
-    <button id="toggle-chart" class="toggle-btn">Mostra serie storiche globali (GISTEMP · HadCRUT5 · Berkeley Earth)</button>
+    <button id="toggle-chart" class="toggle-btn">Serie storiche globali (GISTEMP · HadCRUT5 · Berkeley Earth)</button>
 
-    <section id="chart-section" hidden>
+    <aside id="chart-section" aria-label="Pannello serie storiche">
+      <button id="close-chart" class="close-btn" aria-label="Chiudi pannello">×</button>
       <h2>Anomalie globali annuali di temperatura (°C)</h2>
       <canvas id="gistemp-chart"></canvas>
       <p class="note">
@@ -32,7 +33,7 @@
         (NASA GISTEMP, HadCRUT5, Berkeley Earth); senza backend si usa lo snapshot NASA in
         <code>data/gistemp.js</code>. HadCRUT5 è aggregato da mensile ad annuale.
       </p>
-    </section>
+    </aside>
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

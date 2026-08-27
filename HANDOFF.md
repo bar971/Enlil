@@ -1,6 +1,6 @@
 # HANDOFF — Enlil (clima globale su mappa mondiale)
 
-> Stato al 2026-08-27. Documento per riprendere il progetto su un'altra macchina o da un altro agente.
+> Stato al 2026-08-27 (post migliorie UI/UX). Documento per riprendere il progetto su un'altra macchina o da un altro agente.
 
 ## Cos'è
 
@@ -43,17 +43,21 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - **NASA GISS risponde 403 allo User-Agent di Node/undici**: `fetchWithRetry` invia un UA browser-like.
 - **NOAA CDO**: `sortfield=distance` NON esiste (400); la stazione più vicina si calcola in locale (distanza equirettangolare). Molte stazioni GHCND sono storiche (es. MILAN chiusa nel 2008) → filtro `maxdate` entro 3 anni. Le stazioni italiane hanno ~1 anno di ritardo (maxdate ago 2025) → il periodo della query è ancorato a `maxdate`, non a oggi.
 - **CARTO basemaps mostra watermark "API KEY REQUIRED"** senza chiave → basemap = Esri World Dark Gray Canvas (confini + nomi stati, niente chiave).
-- **CDS**: il dataset giusto è `reanalysis-era5-single-levels-monthly-means`; request con liste (`year: [...]`) e `data_format: "netcdf"` + `download_format: "unarchived"`. I NetCDF nuovi usano la coordinata `valid_time` (lo script gestisce anche `time`).
-- **Frontend**: rileva il backend con `GET /api/health` (timeout 2 s); senza backend funziona standalone (fetch diretto Open-Meteo + snapshot GISTEMP embedded). Grafico renderizzato lazy alla prima apertura (Chart.js richiede canvas visibile). Click su marker ≠ click su mappa (`bubblingMouseEvents: false`): il secondo interroga NOAA.
+- **CDS**: il dataset giusto è `reanalysis-era5-single-levels-monthly-means`; request con liste (`year: [...]`) e `data_format: "netcdf"` + `download_format: "unarchived"`. I NetCDF nuovi usano la coordinata `valid_time` (lo script gestisce anche `time`). **Le longitudini ERA5 sono 0..360**: lo script le normalizza a -180..180 (senza normalizzazione metà del calore viene disegnata fuori mappa da Leaflet).
+- **Frontend**: rileva il backend con `GET /api/health` (timeout 2 s); senza backend funziona standalone (fetch diretto Open-Meteo + snapshot GISTEMP embedded). Grafico = pannello laterale a scomparsa, renderizzato lazy alla prima apertura (Chart.js richiede canvas visibile). Click su marker ≠ click su mappa (`bubblingMouseEvents: false`): il secondo interroga NOAA. Layer Open-Meteo ed ERA5 mutuamente esclusivi via `L.control.layers` (base layers); la legenda mostra la fonte attiva su `baselayerchange`.
+- **Mappa vincolata**: `noWrap` + `maxBounds` (un solo mondo), `minZoom` calcolato con `getBoundsZoom(WORLD_BOUNDS, true)` (niente zoom-out oltre la vista globale), maxZoom 12. Marker OM con raggio adattivo allo zoom (4→10 px).
+- **Heatmap**: i parametri vanno tarati per densità griglia. OM (323 punti): radius 40/blur 30/max 0.9/minOpacity 0.25. ERA5 (10.368 punti): radius 14/blur 10/max 1.5/minOpacity 0.3 — con i default la griglia fitta satura tutto per accumulo.
 
 ## Verifiche eseguite (2026-08-27)
 
 - Tutti gli endpoint testati con curl: health, grid (200, snapshot 323/323 validi, ΔT medio +1,25 °C), gistemp/hadcrut5/berkeley (200, cacheati), era5 (200, 508 KB), noaa (CAMERI/ROMA CIAMPINO con valori reali)
 - ERA5: ΔT medio +1,23 °C, Artico +3,20 °C vs Tropici +0,83 °C (amplificazione artica coerente)
-- **Mai verificato in browser reale**: rendering completo di mappa/popup/grafico dopo le ultime modifiche (nessuna automazione browser eseguita)
+- **Verifica visiva con Playwright headless** (Chromium su http://localhost:8000): rendering mappa, selettore layer OM/ERA5, pannello grafico con 3 serie, vincoli zoom/pan (10 zoom-out forzati non spostano la vista), legenda fonte attiva. Così è stato trovato e corretto il bug delle longitudini ERA5 0..360.
+- Test Playwright non committati: erano in `/tmp/pwtest` (playwright-core + Chromium già presente in `%LOCALAPPDATA%/ms-playwright`).
 
 ## Debiti noti / prossimi passi
 
-- UI/UX: migliorie in coda (discusse con l'utente, da raccogliere)
-- `scripts/fetch_era5.py` testato e funzionante, ma il layer ERA5 in mappa non è stato validato visivamente
-- Nessun test automatico; nessun deploy pubblico (solo localhost)
+- Nessun test automatico in CI; nessun deploy pubblico (solo localhost)
+- Griglia OM fissa (passo 10°×20°): si può valutare densità maggiore o zoom-dipendente
+- ERA5 va rigenerato periodicamente per restare aggiornato (script pronto)
+- Popup NOAA mostra solo l'ultimo anno: possibile estensione a serie storica della stazione

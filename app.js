@@ -28,7 +28,18 @@ async function detectBackend() {
 
 /* ---------------- Mappa ---------------- */
 
-const map = L.map("map", { worldCopyJump: true }).setView([20, 0], 2);
+/* Mappa vincolata: un solo mondo (niente ripetizioni orizzontali),
+ * niente zoom-out oltre la vista dell'intero globo, pan confinato ai bordi. */
+const WORLD_BOUNDS = L.latLngBounds([-90, -180], [90, 180]);
+const map = L.map("map", {
+  maxBounds: WORLD_BOUNDS,
+  maxBoundsViscosity: 1.0,
+  maxZoom: 12,
+});
+// minZoom = livello a cui il mondo intero riempie la viewport
+const worldZoom = Math.ceil(map.getBoundsZoom(WORLD_BOUNDS, true));
+map.setMinZoom(worldZoom);
+map.fitBounds(WORLD_BOUNDS);
 // Basemap geo-politica Esri World Dark Gray: confini e nomi degli stati
 // (i nomi compaiono automaticamente ai livelli di zoom in cui sono leggibili).
 // Nota: CARTO basemaps è stata scartata perché ora mostra un watermark
@@ -36,21 +47,44 @@ const map = L.map("map", { worldCopyJump: true }).setView([20, 0], 2);
 L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
   {
+    noWrap: true, // niente copie del mondo in orizzontale
     maxZoom: 12,
     attribution:
       'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, DeLorme, NAVTEQ, TomTom, Intermap, iPC, USGS, FAO, NPS, NRCAN, GeoBase, Kadaster NL, Ordnance Survey, Esri Japan, METI, Esri China (Hong Kong), and the GIS User Community',
   }
 ).addTo(map);
 
+/* Legenda con indicazione della fonte attiva */
+let legendDiv = null;
+function updateLegend(sourceLabel) {
+  if (!legendDiv) return;
+  legendDiv.innerHTML =
+    '<div class="bar"></div>' +
+    "ΔT ultimi 12 mesi vs 40 anni fa<br>(°C): 0 → ≥ +3<br>" +
+    `<span class="legend-src">Fonte: ${sourceLabel}</span>`;
+}
 const legend = L.control({ position: "bottomright" });
 legend.onAdd = () => {
-  const div = L.DomUtil.create("div", "legend");
-  div.innerHTML =
-    '<div class="bar"></div>' +
-    "ΔT ultimi 12 mesi<br>vs 40 anni fa (°C): 0 → ≥ +3";
-  return div;
+  legendDiv = L.DomUtil.create("div", "legend");
+  updateLegend("Open-Meteo");
+  return legendDiv;
 };
 legend.addTo(map);
+
+/* Selettore fonte mappa: Open-Meteo ed ERA5 sono mutuamente esclusivi
+ * (base layers del controllo, radio button) */
+const layersControl = L.control
+  .layers({}, null, { position: "topright", collapsed: false })
+  .addTo(map);
+const LAYER_NAMES = {
+  om: "Open-Meteo · 323 punti cliccabili",
+  era5: "ERA5 · griglia fitta (~2,5°)",
+};
+map.on("baselayerchange", (e) => {
+  updateLegend(
+    e.name === LAYER_NAMES.era5 ? "ERA5 (Copernicus CDS)" : "Open-Meteo (archive API)"
+  );
+});
 
 const statusEl = document.getElementById("map-status");
 function setStatus(msg, isError = false) {
@@ -247,13 +281,27 @@ async function loadOpenMeteoLayer() {
       .addTo(markerLayer);
   });
 
-  L.heatLayer(heatPoints, {
+  const heat = L.heatLayer(heatPoints, {
     radius: 40,
     blur: 30,
     maxZoom: 5,
+    max: 0.9,        // ΔT ~2,7 °C satura già al massimo del colore
+    minOpacity: 0.25, // heatmap leggibile sulla basemap scura senza coprirla
     gradient: { 0: "#2c7fb0", 0.4: "#fee08b", 0.7: "#fc8d59", 1: "#d7301f" },
-  }).addTo(map);
-  markerLayer.addTo(map);
+  });
+  const omLayer = L.layerGroup([heat, markerLayer]);
+  layersControl.addBaseLayer(omLayer, LAYER_NAMES.om);
+  omLayer.addTo(map); // fonte di default
+
+  // Marker adattivi: raggio cresce con lo zoom (da 4 a 10 px)
+  const omMarkers = [];
+  markerLayer.eachLayer((m) => omMarkers.push(m));
+  const applyMarkerSize = () => {
+    const r = Math.max(4, Math.min(3 + map.getZoom(), 10));
+    omMarkers.forEach((m) => m.setRadius(r));
+  };
+  map.on("zoomend", applyMarkerSize);
+  applyMarkerSize();
 
   setStatus(
     `${valid} punti caricati (${source}). ` +
@@ -270,10 +318,15 @@ async function loadEra5Layer() {
   const res = await fetch(PROVIDERS.era5.url);
   if (!res.ok) return;
   const gridJson = await res.json(); // [{lat, lon, anomaly}, ...]
-  L.heatLayer(
-    gridJson.map((g) => [g.lat, g.lon, Math.min(Math.max(g.anomaly / 3, 0), 1)]),
-    { radius: 40, blur: 30, gradient: { 0: "#2c7fb0", 0.4: "#fee08b", 0.7: "#fc8d59", 1: "#d7301f" } }
-  ).addTo(map);
+  // griglia fitta: raggio/blur ridotti rispetto al layer Open-Meteo
+  const era5Layer = L.layerGroup([
+    L.heatLayer(
+      gridJson.map((g) => [g.lat, g.lon, Math.min(Math.max(g.anomaly / 3, 0), 1)]),
+      // griglia fitta: raggio ridotto per evitare la saturazione da accumulo
+      { radius: 14, blur: 10, max: 1.5, minOpacity: 0.3, gradient: { 0: "#2c7fb0", 0.4: "#fee08b", 0.7: "#fc8d59", 1: "#d7301f" } }
+    ),
+  ]);
+  layersControl.addBaseLayer(era5Layer, LAYER_NAMES.era5);
 }
 
 /* NOAA CDO (clima.md §2): click sulla mappa (fuori dai marker) → dati della
@@ -402,22 +455,20 @@ async function renderChart() {
 
 /* ---------------- Avvio ---------------- */
 
-// Grafico: renderizzato lazy alla prima apertura (Chart.js ha bisogno del
-// canvas visibile per calcolare le dimensioni corrette)
+// Grafico: pannello laterale a scomparsa, renderizzato lazy alla prima
+// apertura (Chart.js ha bisogno del canvas visibile per dimensionarsi)
 let chartRendered = false;
-const toggleBtn = document.getElementById("toggle-chart");
-toggleBtn.addEventListener("click", () => {
+function toggleChart(force) {
   const sec = document.getElementById("chart-section");
-  const show = sec.hidden;
-  sec.hidden = !show;
-  toggleBtn.textContent = show
-    ? "Nascondi serie storiche globali"
-    : "Mostra serie storiche globali (GISTEMP · HadCRUT5 · Berkeley Earth)";
+  const show = force !== undefined ? force : !sec.classList.contains("open");
+  sec.classList.toggle("open", show);
   if (show && !chartRendered && PROVIDERS.gistemp.enabled) {
     chartRendered = true;
     renderChart().catch((err) => setStatus(`Errore grafico: ${err.message}`, true));
   }
-});
+}
+document.getElementById("toggle-chart").addEventListener("click", () => toggleChart());
+document.getElementById("close-chart").addEventListener("click", () => toggleChart(false));
 
 (async () => {
   backend = await detectBackend();
