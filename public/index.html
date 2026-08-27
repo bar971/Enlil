@@ -3,8 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- CSP: tutto self-hosted tranne i tile della basemap Esri (img) e, in
+       modalità standalone, il fetch diretto a Open-Meteo (connect). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://server.arcgisonline.com; connect-src 'self' https://archive-api.open-meteo.com; object-src 'none'; base-uri 'self'; form-action 'self'">
   <title>Enlil — Clima globale</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="vendor/leaflet.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -41,9 +44,10 @@
     </aside>
   </main>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <!-- librerie self-hosted (versioni pinnate): leaflet 1.9.4, leaflet.heat 0.2.0, chart.js 4.5.1 -->
+  <script src="vendor/leaflet.js"></script>
+  <script src="vendor/leaflet-heat.js"></script>
+  <script src="vendor/chart.umd.js"></script>
   <script src="data/gistemp.js"></script>
   <script src="app.js"></script>
 </body>
