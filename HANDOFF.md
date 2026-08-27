@@ -67,7 +67,7 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 
 ## Debiti noti / prossimi passi
 
-- Nessun test automatico in CI
+- Test: `node --test` (parser serie + sync app.js↔lib); CI in `.github/workflows/ci.yml`. Copertura ancora limitata (niente test su cache KV/file, NOAA, Worker end-to-end)
 - Dominio custom non configurato (resta su workers.dev)
 - Griglia OM fissa (passo 10°×20°): si può valutare densità maggiore o zoom-dipendente
 - ERA5 va rigenerato periodicamente per restare aggiornato (script pronto)
