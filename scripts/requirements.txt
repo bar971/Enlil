@@ -1,0 +1,10 @@
+# Dipendenze per scripts/fetch_era5.py (genera public/data/era5-grid.json dal CDS).
+# Versioni pinnate a quelle verificate sul .venv del 2026-08-27.
+#   python -m venv .venv
+#   .venv/Scripts/pip install -r scripts/requirements.txt   # Windows
+#   .venv/bin/pip install -r scripts/requirements.txt        # Linux/macOS
+cdsapi==0.7.7
+xarray==2026.7.0
+netCDF4==1.7.4
+cftime==1.6.5
+numpy==2.5.2

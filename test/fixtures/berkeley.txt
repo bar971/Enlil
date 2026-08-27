@@ -1,0 +1,7 @@
+% Berkeley Earth — fixture ridotta per i test
+% Year, Annual Anomaly, Annual Unc., ...
+% relative to the Jan 1951-Dec 1980 average
+  1960   -0.020     0.050    -0.010    0.045
+  1970    0.010     0.050     0.005    0.045
+  2015    0.810     0.050     0.790    0.045
+riga di testo non numerica
