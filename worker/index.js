@@ -175,7 +175,9 @@ async function handleGrid(env, ctx) {
 
 /* ---------------- NOAA CDO (secret NOAA_TOKEN) ---------------- */
 
-async function handleNoaaStation(env, url) {
+const NOAA_TTL_S = 7 * 24 * 3600;
+
+async function handleNoaaStation(env, url, request, ctx) {
   if (!env.NOAA_TOKEN) {
     return json(
       { error: "NOAA_TOKEN non configurato sul Worker (wrangler secret put NOAA_TOKEN)." },
@@ -187,6 +189,39 @@ async function handleNoaaStation(env, url) {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
     return json({ error: "Parametri lat/lon mancanti o non validi" }, 400);
   }
+
+  // Throttle best-effort per IP: KV non è atomica, è un limite morbido per
+  // evitare che uno script esaurisca la quota NOAA (10.000/giorno per token).
+  const ip = request.headers.get("CF-Connecting-IP") || "?";
+  const rlKey = `noaa-rl:${ip}:${Math.floor(Date.now() / 60000)}`;
+  const rlCount = Number(await env.ENLIL_CACHE.get(rlKey)) || 0;
+  if (rlCount >= 30) {
+    return json({ error: "Troppe richieste NOAA in un minuto, riprova a breve." }, 429, { "Cache-Control": NO_STORE });
+  }
+  ctx.waitUntil(env.ENLIL_CACHE.put(rlKey, String(rlCount + 1), { expirationTtl: 120 }));
+
+  // Cache della risposta per lat/lon arrotondati a 0,1° (~11 km), TTL 7 giorni:
+  // la maggior parte dei click su aree abitate ricade su una cella già vista.
+  const cacheKey = `noaa:${lat.toFixed(1)}:${lon.toFixed(1)}`;
+  const cached = await env.ENLIL_CACHE.getWithMetadata(cacheKey);
+  if (cached.value !== null && cached.metadata?.ts && Date.now() / 1000 - cached.metadata.ts < NOAA_TTL_S) {
+    return new Response(cached.value, {
+      status: cached.metadata.status || 200,
+      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": NO_STORE, "X-Enlil-Cache": "kv" },
+    });
+  }
+  const reply = (payload, status) => {
+    const bodyStr = JSON.stringify(payload);
+    if (status === 200 || status === 404) {
+      ctx.waitUntil(env.ENLIL_CACHE.put(cacheKey, bodyStr, {
+        metadata: { ts: Math.floor(Date.now() / 1000), status }, expirationTtl: NOAA_TTL_S,
+      }));
+    }
+    return new Response(bodyStr, {
+      status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": NO_STORE },
+    });
+  };
+
   const h = { token: env.NOAA_TOKEN };
   // clamp ai limiti geografici: vicino ai poli/antimeridiano lat±1 / lon±1
   // uscirebbe da [-90,90] / [-180,180] e CDO risponderebbe 400
@@ -201,7 +236,7 @@ async function handleNoaaStation(env, url) {
     (s) => s.maxdate && s.maxdate >= fmtDate(new Date(Date.now() - 3 * 365 * 86400000))
   );
   if (!stations.length) {
-    return json({ error: "Nessuna stazione GHCND con dati recenti entro 1° dal punto" }, 404);
+    return reply({ error: "Nessuna stazione GHCND con dati recenti entro 1° dal punto" }, 404);
   }
   const dist = (s) => {
     const dLat = (s.latitude - lat) * 111;
@@ -231,11 +266,11 @@ async function handleNoaaStation(env, url) {
     const v = rows.filter((r) => r.datatype === type).map((r) => r.value);
     return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
   };
-  return json({
+  return reply({
     station: { id: st.id, name: st.name, distanceKm: Math.round(dist(st)) },
     period: { start: fmtDate(startD), end },
     tavg: avg("TAVG"), tmax: avg("TMAX"), tmin: avg("TMIN"),
-  }, 200, { "Cache-Control": NO_STORE });
+  }, 200);
 }
 
 /* ---------------- Entrypoint ---------------- */
@@ -265,7 +300,7 @@ export default {
           return await proxyCached(env, "berkeley", SERIES_TTL_S,
             "https://berkeley-earth-temperature.s3.amazonaws.com/Global/Land_and_Ocean_summary.txt", ctx);
         case "/api/noaa/station-data":
-          return await handleNoaaStation(env, url);
+          return await handleNoaaStation(env, url, request, ctx);
         case "/api/era5":
           return env.ASSETS.fetch(new URL("/data/era5-grid.json", url.origin));
         default:
