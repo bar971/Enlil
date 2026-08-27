@@ -9,6 +9,13 @@
 const GRID_TTL_S = 12 * 3600;
 const SERIES_TTL_S = 24 * 3600;
 
+// Cache HTTP all'edge/nel browser: risposte fresche cacheabili 5 min, poi
+// servibili "stale" per 1h mentre si rivalida. Per le risposte già stale si
+// usa una finestra corta così tornano presto a rivalidarsi.
+const CACHE_FRESH = "public, max-age=300, stale-while-revalidate=3600";
+const CACHE_STALE = "public, max-age=60";
+const NO_STORE = "no-store";
+
 const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Enlil/1.0" };
 
 /* ---------------- Griglia e periodi (specchio di server.js e del frontend) ---------------- */
@@ -53,7 +60,8 @@ const json = (obj, status = 200, extraHeaders = {}) =>
 
 async function fetchWithRetry(url, { headers = {}, retries = 4 } = {}) {
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, { headers: { ...UA, ...headers } });
+    // timeout esplicito: senza, un upstream che pende consuma il budget del Worker
+    const res = await fetch(url, { headers: { ...UA, ...headers }, signal: AbortSignal.timeout(60000) });
     if (res.ok) return res;
     if (res.status === 429 && attempt < retries) {
       const retryAfter = Number(res.headers.get("Retry-After"));
@@ -70,20 +78,22 @@ async function fetchWithRetry(url, { headers = {}, retries = 4 } = {}) {
 
 /* KV cache: valore + timestamp in metadata. Se l'upstream fallisce ma esiste
  * una copia vecchia, viene servita con header X-Enlil-Stale. */
-async function proxyCached(env, key, ttlS, url) {
+async function proxyCached(env, key, ttlS, url, ctx) {
+  const CT = "text/plain; charset=utf-8";
   const cached = await env.ENLIL_CACHE.getWithMetadata(key);
   if (cached.value !== null && cached.metadata?.ts && Date.now() / 1000 - cached.metadata.ts < ttlS) {
-    return new Response(cached.value, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    return new Response(cached.value, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   }
   try {
     const up = await fetchWithRetry(url);
     const body = await up.text();
-    await env.ENLIL_CACHE.put(key, body, { metadata: { ts: Math.floor(Date.now() / 1000) } });
-    return new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    // scrittura KV in background: non blocca la risposta
+    ctx.waitUntil(env.ENLIL_CACHE.put(key, body, { metadata: { ts: Math.floor(Date.now() / 1000) } }));
+    return new Response(body, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   } catch (err) {
     if (cached.value !== null) {
       return new Response(cached.value, {
-        headers: { "Content-Type": "text/plain; charset=utf-8", "X-Enlil-Stale": "1" },
+        headers: { "Content-Type": CT, "Cache-Control": CACHE_STALE, "X-Enlil-Stale": "1" },
       });
     }
     return json({ error: String(err.message || err) }, 502);
@@ -118,10 +128,11 @@ async function fetchGridMeans(grid, period) {
   return means;
 }
 
-async function handleGrid(env) {
+async function handleGrid(env, ctx) {
+  const CT = "application/json";
   const cached = await env.ENLIL_CACHE.getWithMetadata("grid");
   if (cached.value !== null && cached.metadata?.ts && Date.now() / 1000 - cached.metadata.ts < GRID_TTL_S) {
-    return new Response(cached.value, { headers: { "Content-Type": "application/json" } });
+    return new Response(cached.value, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   }
   try {
     const grid = buildGrid();
@@ -135,15 +146,15 @@ async function handleGrid(env) {
       recent,
       baseline,
     });
-    await env.ENLIL_CACHE.put("grid", payload, {
+    ctx.waitUntil(env.ENLIL_CACHE.put("grid", payload, {
       metadata: { ts: Math.floor(Date.now() / 1000) },
-    });
-    return new Response(payload, { headers: { "Content-Type": "application/json" } });
+    }));
+    return new Response(payload, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   } catch (err) {
     if (cached.value !== null) {
       const payload = JSON.parse(cached.value);
       payload.stale = true;
-      return json(payload);
+      return json(payload, 200, { "Cache-Control": CACHE_STALE });
     }
     // ultimo livello: snapshot statico committato (asset public/data/om-grid-seed.json)
     try {
@@ -152,7 +163,7 @@ async function handleGrid(env) {
         const payload = await seedRes.json();
         payload.stale = true;
         payload.seed = true;
-        return json(payload);
+        return json(payload, 200, { "Cache-Control": CACHE_STALE });
       }
     } catch { /* seed assente */ }
     return json(
@@ -164,7 +175,9 @@ async function handleGrid(env) {
 
 /* ---------------- NOAA CDO (secret NOAA_TOKEN) ---------------- */
 
-async function handleNoaaStation(env, url) {
+const NOAA_TTL_S = 7 * 24 * 3600;
+
+async function handleNoaaStation(env, url, request, ctx) {
   if (!env.NOAA_TOKEN) {
     return json(
       { error: "NOAA_TOKEN non configurato sul Worker (wrangler secret put NOAA_TOKEN)." },
@@ -176,8 +189,45 @@ async function handleNoaaStation(env, url) {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
     return json({ error: "Parametri lat/lon mancanti o non validi" }, 400);
   }
+
+  // Throttle best-effort per IP: KV non è atomica, è un limite morbido per
+  // evitare che uno script esaurisca la quota NOAA (10.000/giorno per token).
+  const ip = request.headers.get("CF-Connecting-IP") || "?";
+  const rlKey = `noaa-rl:${ip}:${Math.floor(Date.now() / 60000)}`;
+  const rlCount = Number(await env.ENLIL_CACHE.get(rlKey)) || 0;
+  if (rlCount >= 30) {
+    return json({ error: "Troppe richieste NOAA in un minuto, riprova a breve." }, 429, { "Cache-Control": NO_STORE });
+  }
+  ctx.waitUntil(env.ENLIL_CACHE.put(rlKey, String(rlCount + 1), { expirationTtl: 120 }));
+
+  // Cache della risposta per lat/lon arrotondati a 0,1° (~11 km), TTL 7 giorni:
+  // la maggior parte dei click su aree abitate ricade su una cella già vista.
+  const cacheKey = `noaa:${lat.toFixed(1)}:${lon.toFixed(1)}`;
+  const cached = await env.ENLIL_CACHE.getWithMetadata(cacheKey);
+  if (cached.value !== null && cached.metadata?.ts && Date.now() / 1000 - cached.metadata.ts < NOAA_TTL_S) {
+    return new Response(cached.value, {
+      status: cached.metadata.status || 200,
+      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": NO_STORE, "X-Enlil-Cache": "kv" },
+    });
+  }
+  const reply = (payload, status) => {
+    const bodyStr = JSON.stringify(payload);
+    if (status === 200 || status === 404) {
+      ctx.waitUntil(env.ENLIL_CACHE.put(cacheKey, bodyStr, {
+        metadata: { ts: Math.floor(Date.now() / 1000), status }, expirationTtl: NOAA_TTL_S,
+      }));
+    }
+    return new Response(bodyStr, {
+      status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": NO_STORE },
+    });
+  };
+
   const h = { token: env.NOAA_TOKEN };
-  const extent = `${(lat - 1).toFixed(2)},${(lon - 1).toFixed(2)},${(lat + 1).toFixed(2)},${(lon + 1).toFixed(2)}`;
+  // clamp ai limiti geografici: vicino ai poli/antimeridiano lat±1 / lon±1
+  // uscirebbe da [-90,90] / [-180,180] e CDO risponderebbe 400
+  const clampLat = (v) => Math.max(-90, Math.min(90, v));
+  const clampLon = (v) => Math.max(-180, Math.min(180, v));
+  const extent = `${clampLat(lat - 1).toFixed(2)},${clampLon(lon - 1).toFixed(2)},${clampLat(lat + 1).toFixed(2)},${clampLon(lon + 1).toFixed(2)}`;
   const stRes = await fetchWithRetry(
     `https://www.ncei.noaa.gov/cdo-web/api/v2/stations?datasetid=GHCND&extent=${extent}&limit=25`,
     { headers: h }
@@ -186,7 +236,7 @@ async function handleNoaaStation(env, url) {
     (s) => s.maxdate && s.maxdate >= fmtDate(new Date(Date.now() - 3 * 365 * 86400000))
   );
   if (!stations.length) {
-    return json({ error: "Nessuna stazione GHCND con dati recenti entro 1° dal punto" }, 404);
+    return reply({ error: "Nessuna stazione GHCND con dati recenti entro 1° dal punto" }, 404);
   }
   const dist = (s) => {
     const dLat = (s.latitude - lat) * 111;
@@ -199,27 +249,34 @@ async function handleNoaaStation(env, url) {
   const startD = new Date(endD);
   startD.setFullYear(startD.getFullYear() - 1);
   const end = fmtDate(endD);
-  const dataRes = await fetchWithRetry(
+  // 3 datatype x 365 giorni possono superare 1000 record: CDO li restituisce
+  // in ordine di data crescente, quindi troncare a 1000 sbilancerebbe la media
+  // verso i primi mesi. Si pagina con offset (1-based) fino a esaurimento.
+  const base =
     `https://www.ncei.noaa.gov/cdo-web/api/v2/data?datasetid=GHCND&stationid=${st.id}` +
-      `&datatypeid=TAVG&datatypeid=TMAX&datatypeid=TMIN&startdate=${fmtDate(startD)}&enddate=${end}&limit=1000&units=metric`,
-    { headers: h }
-  );
-  const rows = (await dataRes.json()).results || [];
+    `&datatypeid=TAVG&datatypeid=TMAX&datatypeid=TMIN&startdate=${fmtDate(startD)}&enddate=${end}&units=metric&limit=1000`;
+  const rows = [];
+  for (let offset = 1; offset <= 5000; offset += 1000) {
+    const dataRes = await fetchWithRetry(`${base}&offset=${offset}`, { headers: h });
+    const batch = (await dataRes.json()).results || [];
+    rows.push(...batch);
+    if (batch.length < 1000) break;
+  }
   const avg = (type) => {
     const v = rows.filter((r) => r.datatype === type).map((r) => r.value);
     return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
   };
-  return json({
+  return reply({
     station: { id: st.id, name: st.name, distanceKm: Math.round(dist(st)) },
     period: { start: fmtDate(startD), end },
     tavg: avg("TAVG"), tmax: avg("TMAX"), tmin: avg("TMIN"),
-  });
+  }, 200);
 }
 
 /* ---------------- Entrypoint ---------------- */
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     try {
       switch (url.pathname) {
@@ -229,21 +286,21 @@ export default {
           try {
             era5 = (await env.ASSETS.fetch("http://assets/data/era5-grid.json")).ok;
           } catch { /* asset assente */ }
-          return json({ ok: true, providers: { noaa: Boolean(env.NOAA_TOKEN), era5 } });
+          return json({ ok: true, providers: { noaa: Boolean(env.NOAA_TOKEN), era5 } }, 200, { "Cache-Control": NO_STORE });
         }
         case "/api/grid":
-          return await handleGrid(env);
+          return await handleGrid(env, ctx);
         case "/api/gistemp":
           return await proxyCached(env, "gistemp", SERIES_TTL_S,
-            "https://data.giss.nasa.gov/gistemp/tabledata_v4/GLB.Ts+dSST.csv");
+            "https://data.giss.nasa.gov/gistemp/tabledata_v4/GLB.Ts+dSST.csv", ctx);
         case "/api/hadcrut5":
           return await proxyCached(env, "hadcrut5", SERIES_TTL_S,
-            "https://www.metoffice.gov.uk/hadobs/hadcrut5/data/HadCRUT.5.1.0.0/analysis/diagnostics/HadCRUT.5.1.0.0.analysis.summary_series.global.monthly.csv");
+            "https://www.metoffice.gov.uk/hadobs/hadcrut5/data/HadCRUT.5.1.0.0/analysis/diagnostics/HadCRUT.5.1.0.0.analysis.summary_series.global.monthly.csv", ctx);
         case "/api/berkeley":
           return await proxyCached(env, "berkeley", SERIES_TTL_S,
-            "https://berkeley-earth-temperature.s3.amazonaws.com/Global/Land_and_Ocean_summary.txt");
+            "https://berkeley-earth-temperature.s3.amazonaws.com/Global/Land_and_Ocean_summary.txt", ctx);
         case "/api/noaa/station-data":
-          return await handleNoaaStation(env, url);
+          return await handleNoaaStation(env, url, request, ctx);
         case "/api/era5":
           return env.ASSETS.fetch(new URL("/data/era5-grid.json", url.origin));
         default:
