@@ -14,9 +14,10 @@ const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Enlil/1.0"
 /* ---------------- Griglia e periodi (specchio di server.js e del frontend) ---------------- */
 
 function buildGrid() {
+  // lon < 180: +180 e -180 sono lo stesso meridiano. 17 lat x 18 lon = 306.
   const pts = [];
   for (let lat = -80; lat <= 80; lat += 10) {
-    for (let lon = -180; lon <= 180; lon += 20) pts.push({ lat, lon });
+    for (let lon = -180; lon < 180; lon += 20) pts.push({ lat, lon });
   }
   return pts;
 }
@@ -144,6 +145,16 @@ async function handleGrid(env) {
       payload.stale = true;
       return json(payload);
     }
+    // ultimo livello: snapshot statico committato (asset public/data/om-grid-seed.json)
+    try {
+      const seedRes = await env.ASSETS.fetch("http://assets/data/om-grid-seed.json");
+      if (seedRes.ok) {
+        const payload = await seedRes.json();
+        payload.stale = true;
+        payload.seed = true;
+        return json(payload);
+      }
+    } catch { /* seed assente */ }
     return json(
       { error: `Open-Meteo non raggiungibile e nessuno snapshot disponibile: ${err.message}` },
       503

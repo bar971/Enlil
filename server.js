@@ -16,6 +16,7 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public"); // statici condivisi col deploy Cloudflare
 const CACHE_DIR = path.join(ROOT, "data", "cache");
 const ERA5_FILE = path.join(PUBLIC_DIR, "data", "era5-grid.json");
+const OM_SEED_FILE = path.join(PUBLIC_DIR, "data", "om-grid-seed.json"); // fallback finale griglia OM
 const GRID_CACHE_TTL_MS = 12 * 3600 * 1000;
 const SERIES_CACHE_TTL_MS = 24 * 3600 * 1000;
 
@@ -34,9 +35,10 @@ const NOAA_TOKEN = process.env.NOAA_TOKEN || "";
 /* ---------------- Griglia e periodi (specchio del frontend) ---------------- */
 
 function buildGrid() {
+  // lon < 180: +180 e -180 sono lo stesso meridiano. 17 lat x 18 lon = 306.
   const pts = [];
   for (let lat = -80; lat <= 80; lat += 10) {
-    for (let lon = -180; lon <= 180; lon += 20) pts.push({ lat, lon });
+    for (let lon = -180; lon < 180; lon += 20) pts.push({ lat, lon });
   }
   return pts;
 }
@@ -181,6 +183,14 @@ async function handleGrid(res) {
     if (stale !== null) {
       const payload = JSON.parse(stale);
       payload.stale = true;
+      return sendJson(res, 200, payload);
+    }
+    // ultimo livello: snapshot statico committato nel repo
+    const seed = readStale(OM_SEED_FILE);
+    if (seed !== null) {
+      const payload = JSON.parse(seed);
+      payload.stale = true;
+      payload.seed = true;
       return sendJson(res, 200, payload);
     }
     return sendJson(res, 503, {
