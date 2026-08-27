@@ -27,7 +27,9 @@
     <aside id="chart-section" aria-label="Pannello serie storiche">
       <button id="close-chart" class="close-btn" aria-label="Chiudi pannello">×</button>
       <h2>Anomalie globali annuali di temperatura (°C)</h2>
-      <canvas id="gistemp-chart"></canvas>
+      <p id="chart-status" class="status" role="status" aria-live="polite"></p>
+      <canvas id="gistemp-chart" role="img"
+              aria-label="Grafico a linee delle anomalie globali annuali di temperatura dal 1850, confronto tra NASA GISTEMP, HadCRUT5 e Berkeley Earth"></canvas>
       <p class="note">
         Con il backend attivo (<code>node server.js</code>) le serie sono aggiornate live via proxy
         (NASA GISTEMP, HadCRUT5, Berkeley Earth); senza backend si usa lo snapshot NASA in

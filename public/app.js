@@ -92,6 +92,13 @@ function setStatus(msg, isError = false) {
   statusEl.classList.toggle("error", isError);
 }
 
+/* Stato dedicato del pannello grafico (separato dallo status della mappa) */
+const chartStatusEl = document.getElementById("chart-status");
+function setChartStatus(msg, isError = false) {
+  chartStatusEl.textContent = msg;
+  chartStatusEl.classList.toggle("error", isError);
+}
+
 /* Griglia di punti sul globo: lat -80..80 passo 10, lon -180..180 passo 20 */
 function buildGrid() {
   const pts = [];
@@ -395,6 +402,7 @@ function parseBerkeley(txt) {
 }
 
 async function renderChart() {
+  setChartStatus("Carico le serie storiche…");
   const datasets = [];
   const toMap = (series) => new Map(series.map((d) => [d.year, d.anomaly]));
   const seriesList = [];
@@ -451,6 +459,7 @@ async function renderChart() {
       plugins: { legend: { labels: { color: "#cdd6e0" } } },
     },
   });
+  setChartStatus("");
 }
 
 /* ---------------- Avvio ---------------- */
@@ -464,7 +473,7 @@ function toggleChart(force) {
   sec.classList.toggle("open", show);
   if (show && !chartRendered && PROVIDERS.gistemp.enabled) {
     chartRendered = true;
-    renderChart().catch((err) => setStatus(`Errore grafico: ${err.message}`, true));
+    renderChart().catch((err) => setChartStatus(`Errore grafico: ${err.message}`, true));
   }
 }
 document.getElementById("toggle-chart").addEventListener("click", () => toggleChart());
