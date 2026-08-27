@@ -60,6 +60,12 @@ async function proxyCached(env, key, ttlS, url, ctx) {
 
 /* ---------------- Open-Meteo: griglia con snapshot in KV ---------------- */
 
+// medie climatologiche 1961-1990 per punto (asset precalcolato)
+async function loadClimatology(env) {
+  const res = await env.ASSETS.fetch("http://assets/data/om-climatology-1961-1990.json");
+  return (await res.json()).mean;
+}
+
 async function handleGrid(env, ctx) {
   const CT = "application/json";
   const cached = await env.ENLIL_CACHE.getWithMetadata("grid");
@@ -67,7 +73,7 @@ async function handleGrid(env, ctx) {
     return new Response(cached.value, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   }
   try {
-    const payload = JSON.stringify(await buildGridPayload());
+    const payload = JSON.stringify(await buildGridPayload(await loadClimatology(env)));
     ctx.waitUntil(kvPut(env, "grid", payload));
     return new Response(payload, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   } catch (err) {
@@ -148,7 +154,7 @@ async function handleNoaaStation(env, url, request, ctx) {
 
 async function refreshGrid(env) {
   try {
-    await kvPut(env, "grid", JSON.stringify(await buildGridPayload()));
+    await kvPut(env, "grid", JSON.stringify(await buildGridPayload(await loadClimatology(env))));
     console.log("cron: grid aggiornata");
   } catch (err) {
     console.warn("cron: refreshGrid fallito:", err.message);
