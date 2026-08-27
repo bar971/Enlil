@@ -6,6 +6,9 @@
     // pre-scalda la KV (grid + serie) ogni 6h, prima che la cache scada
     "crons": ["0 */6 * * *"]
   },
+  "observability": {
+    "enabled": true
+  },
   "assets": {
     "directory": "./public",
     "binding": "ASSETS"
