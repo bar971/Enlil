@@ -22,7 +22,8 @@ from datetime import date, timedelta
 import cdsapi
 import xarray as xr
 
-OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+NC_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "public", "data")
 OUT_FILE = os.path.join(OUT_DIR, "era5-grid.json")
 DATASET = "reanalysis-era5-single-levels-monthly-means"
 VARIABLE = "2m_temperature"
@@ -74,8 +75,9 @@ def main():
     baseline_months = year_month_range(base_end)
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    recent_nc = os.path.join(OUT_DIR, "era5-recent.nc")
-    baseline_nc = os.path.join(OUT_DIR, "era5-baseline.nc")
+    os.makedirs(NC_DIR, exist_ok=True)
+    recent_nc = os.path.join(NC_DIR, "era5-recent.nc")
+    baseline_nc = os.path.join(NC_DIR, "era5-baseline.nc")
     download(client, recent_months, recent_nc)
     download(client, baseline_months, baseline_nc)
 

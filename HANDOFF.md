@@ -55,9 +55,17 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - **Verifica visiva con Playwright headless** (Chromium su http://localhost:8000): rendering mappa, selettore layer OM/ERA5, pannello grafico con 3 serie, vincoli zoom/pan (10 zoom-out forzati non spostano la vista), legenda fonte attiva. Così è stato trovato e corretto il bug delle longitudini ERA5 0..360.
 - Test Playwright non committati: erano in `/tmp/pwtest` (playwright-core + Chromium già presente in `%LOCALAPPDATA%/ms-playwright`).
 
+## Deploy Cloudflare (attivo)
+
+- URL: https://enlil.bar971.workers.dev — Worker `enlil` (`worker/index.js`), statici da `public/` (binding `ASSETS`, da dichiarare esplicitamente in `wrangler.jsonc` altrimenti `env.ASSETS` è undefined), cache KV `enlil-cache` id `076d8cde3bef436eabed421aa3e51546` (binding `ENLIL_CACHE`), secret `NOAA_TOKEN`.
+- Deploy: `npx wrangler deploy` (wrangler 4.x, OAuth già attivo). Dev locale del Worker: `npx wrangler dev` (carica `.env` da solo).
+- **429 da IP Cloudflare**: Open-Meteo limita per IP e gli egress Cloudflare sono condivisi → a freddo `/api/grid` può accumulare retry per ~2 min o fallire; una volta scritta la chiave `grid` in KV resta servita in ~200 ms. In emergenza, seed manuale: `npx wrangler kv key put grid --namespace-id 076d8cde... --path data/cache/grid.json --metadata '{"ts": <epoch>}')`.
+- **KV edge caching**: le letture KV all'edge sono cached ~60 s — anche i miss/null. Se un endpoint appena popolato sembra ignorare la chiave, attendere >60 s SENZA richiamarlo (ogni chiamata rinfresca il null in cache).
+
 ## Debiti noti / prossimi passi
 
-- Nessun test automatico in CI; nessun deploy pubblico (solo localhost)
+- Nessun test automatico in CI
+- Dominio custom non configurato (resta su workers.dev)
 - Griglia OM fissa (passo 10°×20°): si può valutare densità maggiore o zoom-dipendente
 - ERA5 va rigenerato periodicamente per restare aggiornato (script pronto)
 - Popup NOAA mostra solo l'ultimo anno: possibile estensione a serie storica della stazione

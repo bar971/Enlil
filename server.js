@@ -13,8 +13,9 @@ const path = require("path");
 
 const PORT = Number(process.env.PORT || 8000);
 const ROOT = __dirname;
+const PUBLIC_DIR = path.join(ROOT, "public"); // statici condivisi col deploy Cloudflare
 const CACHE_DIR = path.join(ROOT, "data", "cache");
-const ERA5_FILE = path.join(ROOT, "data", "era5-grid.json");
+const ERA5_FILE = path.join(PUBLIC_DIR, "data", "era5-grid.json");
 const GRID_CACHE_TTL_MS = 12 * 3600 * 1000;
 const SERIES_CACHE_TTL_MS = 24 * 3600 * 1000;
 
@@ -273,8 +274,8 @@ const MIME = {
 
 function serveStatic(res, pathname) {
   const rel = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
-  const file = path.normalize(path.join(ROOT, rel));
-  if (!file.startsWith(ROOT)) return sendJson(res, 403, { error: "Forbidden" });
+  const file = path.normalize(path.join(PUBLIC_DIR, rel));
+  if (!file.startsWith(PUBLIC_DIR)) return sendJson(res, 403, { error: "Forbidden" });
   fs.readFile(file, (err, content) => {
     if (err) return sendJson(res, 404, { error: "Not found" });
     send(res, 200, content, MIME[path.extname(file)] || "application/octet-stream");

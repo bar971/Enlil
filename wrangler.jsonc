@@ -1,0 +1,15 @@
+{
+  "name": "enlil",
+  "main": "worker/index.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "ENLIL_CACHE",
+      "id": "076d8cde3bef436eabed421aa3e51546"
+    }
+  ]
+}

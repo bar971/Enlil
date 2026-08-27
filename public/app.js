@@ -216,8 +216,8 @@ async function loadOpenMeteoLayer() {
   let grid, periods, recentMeans, baselineMeans, source;
 
   if (backend !== null) {
-    // Modalità backend: griglia + snapshot gestiti da server.js
-    setStatus("Richiedo la griglia di temperature al backend locale…");
+    // Modalità backend: griglia + snapshot gestiti da server.js o dal Worker
+    setStatus("Richiedo la griglia di temperature al backend…");
     const res = await fetch("/api/grid");
     const payload = await res.json();
     if (!res.ok) throw new Error(payload.error || `Backend HTTP ${res.status}`);
@@ -227,7 +227,7 @@ async function loadOpenMeteoLayer() {
     baselineMeans = payload.baseline;
     source = payload.stale
       ? "snapshot backend (datato: quota Open-Meteo esaurita)"
-      : "backend locale";
+      : "backend (cache condivisa)";
   } else {
     // Modalità standalone: fetch diretto con cache in localStorage
     grid = buildGrid();

@@ -1,4 +1,5 @@
 .env
 .venv/
+.wrangler/
 data/cache/
 data/*.nc
