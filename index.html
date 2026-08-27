@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enlil — Clima globale</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Enlil — Anomalie di temperatura nel mondo</h1>
+    <p class="subtitle">
+      Mappa: riscaldamento per punto (media ultimi 12 mesi vs stesso periodo di 40 anni fa) —
+      fonte Open-Meteo/ERA5-rianalisi. Grafico: anomalie globali NASA GISTEMP dal 1880.
+    </p>
+  </header>
+
+  <main>
+    <section id="map-section">
+      <div id="map"></div>
+      <div id="map-status" class="status">Caricamento dati Open-Meteo…</div>
+    </section>
+
+    <button id="toggle-chart" class="toggle-btn">Mostra serie storiche globali (GISTEMP · HadCRUT5 · Berkeley Earth)</button>
+
+    <section id="chart-section" hidden>
+      <h2>Anomalie globali annuali di temperatura (°C)</h2>
+      <canvas id="gistemp-chart"></canvas>
+      <p class="note">
+        Con il backend attivo (<code>node server.js</code>) le serie sono aggiornate live via proxy
+        (NASA GISTEMP, HadCRUT5, Berkeley Earth); senza backend si usa lo snapshot NASA in
+        <code>data/gistemp.js</code>. HadCRUT5 è aggregato da mensile ad annuale.
+      </p>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="data/gistemp.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

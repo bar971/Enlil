@@ -1,0 +1,114 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #10151c;
+  color: #e6e9ee;
+}
+
+header {
+  padding: 1rem 1.5rem 0.5rem;
+}
+
+h1 { margin: 0 0 0.25rem; font-size: 1.4rem; }
+
+.subtitle {
+  margin: 0;
+  color: #9aa7b5;
+  font-size: 0.9rem;
+  max-width: 70ch;
+}
+
+main {
+  padding: 1rem 1.5rem 1.5rem;
+}
+
+#map-section { position: relative; }
+
+#map {
+  height: 72vh;
+  border-radius: 10px;
+  background: #0b0f14;
+}
+
+.status {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #9aa7b5;
+}
+
+.status.error { color: #ff8a80; }
+
+#chart-section {
+  background: #171e28;
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+#chart-section h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  color: #cdd6e0;
+}
+
+.note {
+  font-size: 0.8rem;
+  color: #8a96a5;
+}
+
+/* Pulsante per mostrare/nascondere il grafico */
+.toggle-btn {
+  margin: 0.9rem 0;
+  padding: 0.55rem 1rem;
+  border: 1px solid #344154;
+  border-radius: 8px;
+  background: #1b2431;
+  color: #cdd6e0;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.toggle-btn:hover { background: #232f41; }
+
+#chart-section { margin-top: 0.5rem; }
+
+/* Popup dei marker: valori con didascalia */
+.popup-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.2rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #e2e2e2;
+}
+
+.popup-row:last-child { border-bottom: none; }
+
+.popup-row .lbl {
+  color: #555;
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.popup-row .val {
+  font-weight: 700;
+  white-space: nowrap;
+  align-self: center;
+}
+
+/* Legenda mappa */
+.legend {
+  background: rgba(16, 21, 28, 0.9);
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.legend .bar {
+  height: 10px;
+  width: 160px;
+  border-radius: 5px;
+  background: linear-gradient(to right, #2c7fb0, #fee08b, #d7301f);
+  margin-bottom: 0.3rem;
+}
