@@ -1,7 +1,7 @@
 /* Enlil — mappa climatica mondiale
  *
  * Due modalità (v. clima.md):
- *  - con backend (`node server.js`): le fonti passano dal proxy con cache
+ *  - con backend (`node server.mjs`): le fonti passano dal proxy con cache
  *    (/api/grid, /api/gistemp, /api/hadcrut5, /api/berkeley, /api/era5, /api/noaa)
  *  - senza backend (file:// o hosting statico): fetch diretti Open-Meteo e
  *    snapshot NASA embedded in data/gistemp.js
@@ -13,7 +13,7 @@ const PROVIDERS = {
   era5:      { enabled: true, url: "/api/era5" },
 };
 
-/* Rilevamento backend: se la pagina è servita da server.js, /api/health
+/* Rilevamento backend: se la pagina è servita da server.mjs, /api/health
  * risponde con lo stato dei provider (noaa: token presente, era5: JSON pronto). */
 let backend = null; // { noaa: boolean, era5: boolean } | null
 async function detectBackend() {
@@ -228,7 +228,7 @@ async function loadOpenMeteoLayer() {
   let grid, periods, recentMeans, baselineMeans, source;
 
   if (backend !== null) {
-    // Modalità backend: griglia + snapshot gestiti da server.js o dal Worker
+    // Modalità backend: griglia + snapshot gestiti da server.mjs o dal Worker
     setStatus("Richiedo la griglia di temperature al backend…");
     const res = await fetch("/api/grid");
     const payload = await res.json();
@@ -326,7 +326,7 @@ async function loadOpenMeteoLayer() {
   );
 }
 
-/* ERA5 (clima.md §4): server.js espone /api/era5 leggendo data/era5-grid.json
+/* ERA5 (clima.md §4): server.mjs espone /api/era5 leggendo data/era5-grid.json
  * generato da scripts/fetch_era5.py. Se il file non esiste (501) non si
  * mostra nulla e non è un errore. */
 async function loadEra5Layer() {
