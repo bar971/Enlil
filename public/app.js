@@ -80,7 +80,7 @@ const layersControl = L.control
   .layers({}, null, { position: "topright", collapsed: false })
   .addTo(map);
 const LAYER_NAMES = {
-  om: "Open-Meteo · 323 punti cliccabili",
+  om: "Open-Meteo · 306 punti cliccabili",
   era5: "ERA5 · griglia fitta (~2,5°)",
 };
 map.on("baselayerchange", (e) => {
@@ -102,11 +102,13 @@ function setChartStatus(msg, isError = false) {
   chartStatusEl.classList.toggle("error", isError);
 }
 
-/* Griglia di punti sul globo: lat -80..80 passo 10, lon -180..180 passo 20 */
+/* Griglia di punti sul globo: lat -80..80 passo 10, lon -180..160 passo 20.
+ * lon < 180 (non <= 180): +180 e -180 sono lo stesso meridiano, includerli
+ * entrambi duplicava 17 punti sulla linea di data. 17 lat x 18 lon = 306. */
 function buildGrid() {
   const pts = [];
   for (let lat = -80; lat <= 80; lat += 10) {
-    for (let lon = -180; lon <= 180; lon += 20) {
+    for (let lon = -180; lon < 180; lon += 20) {
       pts.push({ lat, lon });
     }
   }
@@ -122,8 +124,8 @@ function sleep(ms) {
 }
 
 /* Open-Meteo free tier: ogni location di una richiesta batch conta come
- * chiamata ai fini dei limiti (~600/min, 10.000/giorno). La griglia da 323
- * punti x 2 periodi = ~646 chiamate a caricamento: senza cautele si sfora.
+ * chiamata ai fini dei limiti (~600/min, 10.000/giorno). La griglia da 306
+ * punti x 2 periodi = ~612 chiamate a caricamento: senza cautele si sfora.
  * Mitigazioni: chunking da 100 con pausa tra richieste, retry con backoff
  * su HTTP 429, e cache in localStorage (i ricaricamenti non costano nulla). */
 const CHUNK_SIZE = 100;
@@ -242,7 +244,9 @@ async function loadOpenMeteoLayer() {
     // Modalità standalone: fetch diretto con cache in localStorage
     grid = buildGrid();
     periods = buildPeriods();
-    const cacheKey = `enlil-openmeteo|${periods.recent.start}|${periods.recent.end}`;
+    // v2: griglia passata da 323 a 306 punti (rimosso meridiano 180 duplicato);
+    // la vecchia cache aveva means indicizzati sulla griglia a 323 -> incompatibile
+    const cacheKey = `enlil-openmeteo|v2|${periods.recent.start}|${periods.recent.end}`;
     const cached = loadCache(cacheKey);
     if (cached) {
       recentMeans = cached.recent;

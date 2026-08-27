@@ -34,9 +34,10 @@ const NOAA_TOKEN = process.env.NOAA_TOKEN || "";
 /* ---------------- Griglia e periodi (specchio del frontend) ---------------- */
 
 function buildGrid() {
+  // lon < 180: +180 e -180 sono lo stesso meridiano. 17 lat x 18 lon = 306.
   const pts = [];
   for (let lat = -80; lat <= 80; lat += 10) {
-    for (let lon = -180; lon <= 180; lon += 20) pts.push({ lat, lon });
+    for (let lon = -180; lon < 180; lon += 20) pts.push({ lat, lon });
   }
   return pts;
 }
