@@ -21,12 +21,14 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 | `scripts/fetch_era5.py` | Genera `data/era5-grid.json` dal CDS (richiede token) |
 | `clima.md` | Documento fonte sui dataset |
 | `.env` | `NOAA_TOKEN=...` (gitignored, vive nel repo secrets) |
+| `scripts/gen_om_climatology.mjs` | Genera la climatologia Open-Meteo 1961-1990 sui 306 punti (asset precalcolato, resume-safe) |
+| `data/om-climatology-1961-1990.json` / `data/om-climatology.js` | Media climatologica 1961-1990 per punto: JSON per server/worker, `.js` embedded per la modalità standalone |
 
 ## Fonti dati e stato
 
 | Fonte | Auth | Integrazione | Stato |
 |---|---|---|---|
-| Open-Meteo Archive (ERA5-based) | No | `/api/grid`: griglia 323 punti (lat -80..80 Δ10°, lon -180..180 Δ20°), media ultimi 12 mesi vs 40 anni prima | ✓ live |
+| Open-Meteo Archive (ERA5-based) | No | `/api/grid`: griglia 306 punti (lat -80..80 Δ10°, lon -180..160 Δ20°), **anomalia media ultimi 12 mesi vs climatologia 1961-1990** (climatologia precalcolata come asset; sul percorso caldo si scarica solo `recent`) | ✓ live |
 | NASA GISTEMP | No | `/api/gistemp` proxy CSV, cache 24h | ✓ live |
 | HadCRUT5 | No | `/api/hadcrut5` proxy CSV mensile → aggregato annuale nel frontend | ✓ live |
 | Berkeley Earth | No | `/api/berkeley` proxy TXT annuale | ✓ live |
@@ -47,9 +49,10 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - **NOAA CDO**: `sortfield=distance` NON esiste (400); la stazione più vicina si calcola in locale (distanza equirettangolare). Molte stazioni GHCND sono storiche (es. MILAN chiusa nel 2008) → filtro `maxdate` entro 3 anni. Le stazioni italiane hanno ~1 anno di ritardo (maxdate ago 2025) → il periodo della query è ancorato a `maxdate`, non a oggi.
 - **CARTO basemaps mostra watermark "API KEY REQUIRED"** senza chiave → basemap = Esri World Dark Gray Canvas (confini + nomi stati, niente chiave).
 - **CDS**: il dataset giusto è `reanalysis-era5-single-levels-monthly-means`; request con liste (`year: [...]`) e `data_format: "netcdf"` + `download_format: "unarchived"`. I NetCDF nuovi usano la coordinata `valid_time` (lo script gestisce anche `time`). **Le longitudini ERA5 sono 0..360**: lo script le normalizza a -180..180 (senza normalizzazione metà del calore viene disegnata fuori mappa da Leaflet).
-- **Frontend**: rileva il backend con `GET /api/health` (timeout 2 s); senza backend funziona standalone (fetch diretto Open-Meteo + snapshot GISTEMP embedded). Grafico = pannello laterale a scomparsa, renderizzato lazy alla prima apertura (Chart.js richiede canvas visibile). Click su marker ≠ click su mappa (`bubblingMouseEvents: false`): il secondo interroga NOAA. Layer Open-Meteo ed ERA5 mutuamente esclusivi via `L.control.layers` (base layers); la legenda mostra la fonte attiva su `baselayerchange`.
+- **Metrica mappa** = anomalia media ultimi 12 mesi − climatologia 1961-1990 (stessa baseline del grafico). La climatologia per punto non cambia mai: precalcolata come asset (`om-climatology-1961-1990.json`), NON scaricata sul percorso caldo → `/api/grid` scarica solo `recent` (306 chiamate, non 612). `buildGridPayload(climatologyMeans)` riceve l'array; il payload tiene la chiave `baseline` (= climatologia per punto) per non cambiare forma al frontend.
+- **Frontend**: rileva il backend con `GET /api/health` (timeout 2 s); senza backend funziona standalone (fetch diretto Open-Meteo `recent` + climatologia da `data/om-climatology.js` embedded + snapshot GISTEMP embedded). Grafico = pannello laterale a scomparsa, renderizzato lazy alla prima apertura (Chart.js richiede canvas visibile). Click su marker ≠ click su mappa (`bubblingMouseEvents: false`): il secondo interroga NOAA. Layer Open-Meteo ed ERA5 mutuamente esclusivi via `L.control.layers` (base layers); la legenda mostra la fonte attiva su `baselayerchange`.
 - **Mappa vincolata**: `noWrap` + `maxBounds` (un solo mondo), `minZoom` calcolato con `getBoundsZoom(WORLD_BOUNDS, true)` (niente zoom-out oltre la vista globale), maxZoom 12. Marker OM con raggio adattivo allo zoom (4→10 px).
-- **Heatmap**: i parametri vanno tarati per densità griglia. OM (323 punti): radius 40/blur 30/max 0.9/minOpacity 0.25. ERA5 (10.368 punti): radius 14/blur 10/max 1.5/minOpacity 0.3 — con i default la griglia fitta satura tutto per accumulo.
+- **Heatmap**: i parametri vanno tarati per densità griglia. OM (306 punti): radius 40/blur 30/max 0.9/minOpacity 0.25. ERA5 (10.368 punti): radius 14/blur 10/max 1.5/minOpacity 0.3 — con i default la griglia fitta satura tutto per accumulo.
 
 ## Verifiche eseguite (2026-08-27)
 
@@ -70,5 +73,6 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - Test: `node --test` (parser serie + sync app.js↔lib); CI in `.github/workflows/ci.yml`. Copertura ancora limitata (niente test su cache KV/file, NOAA, Worker end-to-end)
 - Dominio custom non configurato (resta su workers.dev)
 - Griglia OM fissa (passo 10°×20°): si può valutare densità maggiore o zoom-dipendente
-- ERA5 va rigenerato periodicamente per restare aggiornato (script pronto)
+- ERA5 va rigenerato periodicamente per restare aggiornato (`scripts/fetch_era5.py`, ora climatologia 1961-1990)
+- Climatologia OM (`om-climatology-*.json`): temporaneamente **campionata da ERA5** da `fetch_era5.py` (bias ERA5-Land vs ERA5 a coste/montagne). Rigenerarla da Open-Meteo con `scripts/gen_om_climatology.mjs` quando la quota giornaliera è disponibile, poi ricommittare + `wrangler deploy` + re-seed KV `grid`
 - Popup NOAA mostra solo l'ultimo anno: possibile estensione a serie storica della stazione

@@ -36,8 +36,20 @@ function extractFnSource(src, name) {
   return decl + src.slice(braceStart, i);
 }
 
+/* Estrae "const NOME = …;" su una riga (le const condivise sono oggetti inline). */
+function extractConst(src, name) {
+  const re = new RegExp(`const\\s+${name}\\s*=\\s*`);
+  const m = re.exec(src);
+  if (!m) throw new Error(`const ${name} non trovata`);
+  const end = src.indexOf(";", m.index);
+  return src.slice(m.index, end + 1);
+}
+
+/* deps: nomi di funzioni o const da includere nello scope prima di `name`. */
 function loadFn(src, name, deps = []) {
-  const parts = deps.map((d) => extractFnSource(src, d));
+  const parts = deps.map((d) => {
+    try { return extractFnSource(src, d); } catch { return extractConst(src, d); }
+  });
   parts.push(extractFnSource(src, name));
   // eslint-disable-next-line no-new-func
   return new Function(`${parts.join("\n")}\nreturn ${name};`)();
@@ -72,10 +84,17 @@ test("app.js fmtDate == lib/core.mjs fmtDate", () => {
 });
 
 test("app.js buildPeriods == lib/core.mjs buildPeriods", () => {
-  const appFn = loadFn(appJs, "buildPeriods", ["fmtDate"]);
+  const appFn = loadFn(appJs, "buildPeriods", ["CLIMATOLOGY", "fmtDate"]);
   // due chiamate a microsecondi di distanza: uguali salvo il tick di mezzanotte
   // UTC, nel qual caso si riprova una volta
   let a = JSON.stringify(appFn()), b = JSON.stringify(core.buildPeriods());
   if (a !== b) { a = JSON.stringify(appFn()); b = JSON.stringify(core.buildPeriods()); }
   assert.equal(a, b);
+});
+
+test("lib/core.mjs buildPeriods: climatologia fissa 1961-1990, recent ~1 anno", () => {
+  const p = core.buildPeriods();
+  assert.deepEqual(p.climatology, { start: "1961-01-01", end: "1990-12-31" });
+  const days = (new Date(p.recent.end) - new Date(p.recent.start)) / 86400000;
+  assert.ok(days >= 364 && days <= 367, `recent copre ${days} giorni`);
 });

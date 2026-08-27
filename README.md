@@ -16,7 +16,7 @@ Nessuna dipendenza npm: il backend locale è Node puro (`node:http`), il Worker 
 
 ## Cosa mostra
 
-- **Mappa** (Leaflet, basemap Esri World Dark Gray con confini e nomi degli stati): heatmap + 323 marker (lat -80..80 passo 10°, lon -180..180 passo 20°). Per ogni punto, ΔT = media ultimi 12 mesi − media stesso periodo 40 anni fa (Open-Meteo Archive / rianalisi ERA5). Clic su marker → dettagli; clic altrove sulla mappa → stazione NOAA GHCND più vicina (se configurata).
+- **Mappa** (Leaflet, basemap Esri World Dark Gray con confini e nomi degli stati): heatmap + 306 marker (lat -80..80 passo 10°, lon -180..160 passo 20°). Per ogni punto, anomalia = media ultimi 12 mesi − media climatologica 1961–1990 (Open-Meteo Archive / rianalisi ERA5), stessa baseline del grafico. La climatologia è precalcolata (`scripts/gen_om_climatology.mjs` → `public/data/om-climatology-1961-1990.json`); sul percorso caldo `/api/grid` scarica solo gli ultimi 12 mesi. Clic su marker → dettagli; clic altrove sulla mappa → stazione NOAA GHCND più vicina (se configurata).
 - **Grafico a scomparsa**: anomalie globali annuali GISTEMP (dal 1880), HadCRUT5 (dal 1850, aggregato da mensile), Berkeley Earth (dal 1850).
 
 ## Backend: endpoint
@@ -53,11 +53,13 @@ Il repo GitHub è collegato a **Workers Builds**: ogni push su `master` triggera
    key: YOUR_PERSONAL_ACCESS_TOKEN
    ```
 3. Accettare la licenza del dataset: apri [la pagina del dataset](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels-monthly-means?tab=download) loggato, scorri in fondo ("Terms of use") e clicca Accept
-4. `pip install cdsapi xarray netCDF4`, poi:
+4. `pip install -r scripts/requirements.txt`, poi:
    ```bash
-   python scripts/fetch_era5.py   # scarica 2 NetCDF e scrive data/era5-grid.json
+   python scripts/fetch_era5.py   # scarica 2 NetCDF (recent + climatologia 1961-1990),
+                                  # scrive data/era5-grid.json e la climatologia OM provvisoria
    ```
-   Il layer ERA5 compare in automatico al prossimo caricamento della pagina.
+   Il layer ERA5 compare in automatico al prossimo caricamento della pagina. La
+   climatologia Open-Meteo "vera" si rigenera con `node scripts/gen_om_climatology.mjs`.
 
 ## Note
 
