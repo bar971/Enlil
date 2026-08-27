@@ -11,23 +11,27 @@
   <header>
     <h1>Enlil — Anomalie di temperatura nel mondo</h1>
     <p class="subtitle">
-      Mappa: riscaldamento per punto (media ultimi 12 mesi vs stesso periodo di 40 anni fa) —
-      fonte Open-Meteo/ERA5-rianalisi. Grafico: anomalie globali NASA GISTEMP dal 1880.
+      Mappa: differenza di temperatura per punto tra gli ultimi 12 mesi e la stessa
+      finestra di 12 mesi di 40 anni fa — confronto indicativo tra due periodi, non
+      un trend climatico. Fonte Open-Meteo/ERA5-rianalisi.
+      Grafico: anomalie globali annuali NASA GISTEMP (dal 1880), HadCRUT5 e Berkeley Earth (dal 1850).
     </p>
   </header>
 
   <main>
     <section id="map-section">
       <div id="map"></div>
-      <div id="map-status" class="status">Caricamento dati Open-Meteo…</div>
+      <div id="map-status" class="status" role="status" aria-live="polite">Caricamento dati Open-Meteo…</div>
     </section>
 
-    <button id="toggle-chart" class="toggle-btn">Serie storiche globali (GISTEMP · HadCRUT5 · Berkeley Earth)</button>
+    <button id="toggle-chart" class="toggle-btn" aria-controls="chart-section" aria-expanded="false">Serie storiche globali (GISTEMP · HadCRUT5 · Berkeley Earth)</button>
 
     <aside id="chart-section" aria-label="Pannello serie storiche">
       <button id="close-chart" class="close-btn" aria-label="Chiudi pannello">×</button>
       <h2>Anomalie globali annuali di temperatura (°C)</h2>
-      <canvas id="gistemp-chart"></canvas>
+      <p id="chart-status" class="status" role="status" aria-live="polite"></p>
+      <canvas id="gistemp-chart" role="img"
+              aria-label="Grafico a linee delle anomalie globali annuali di temperatura dal 1850, confronto tra NASA GISTEMP, HadCRUT5 e Berkeley Earth"></canvas>
       <p class="note">
         Con il backend attivo (<code>node server.js</code>) le serie sono aggiornate live via proxy
         (NASA GISTEMP, HadCRUT5, Berkeley Earth); senza backend si usa lo snapshot NASA in

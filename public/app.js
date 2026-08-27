@@ -60,7 +60,8 @@ function updateLegend(sourceLabel) {
   if (!legendDiv) return;
   legendDiv.innerHTML =
     '<div class="bar"></div>' +
-    "ΔT ultimi 12 mesi vs 40 anni fa<br>(°C): 0 → ≥ +3<br>" +
+    '<div class="legend-ticks"><span>0</span><span>+1</span><span>+2</span><span>≥ +3</span></div>' +
+    "ΔT ultimi 12 mesi vs 40 anni fa (°C)<br>" +
     `<span class="legend-src">Fonte: ${sourceLabel}</span>`;
 }
 const legend = L.control({ position: "bottomright" });
@@ -90,6 +91,13 @@ const statusEl = document.getElementById("map-status");
 function setStatus(msg, isError = false) {
   statusEl.textContent = msg;
   statusEl.classList.toggle("error", isError);
+}
+
+/* Stato dedicato del pannello grafico (separato dallo status della mappa) */
+const chartStatusEl = document.getElementById("chart-status");
+function setChartStatus(msg, isError = false) {
+  chartStatusEl.textContent = msg;
+  chartStatusEl.classList.toggle("error", isError);
 }
 
 /* Griglia di punti sul globo: lat -80..80 passo 10, lon -180..180 passo 20 */
@@ -395,6 +403,7 @@ function parseBerkeley(txt) {
 }
 
 async function renderChart() {
+  setChartStatus("Carico le serie storiche…");
   const datasets = [];
   const toMap = (series) => new Map(series.map((d) => [d.year, d.anomaly]));
   const seriesList = [];
@@ -451,6 +460,7 @@ async function renderChart() {
       plugins: { legend: { labels: { color: "#cdd6e0" } } },
     },
   });
+  setChartStatus("");
 }
 
 /* ---------------- Avvio ---------------- */
@@ -458,17 +468,28 @@ async function renderChart() {
 // Grafico: pannello laterale a scomparsa, renderizzato lazy alla prima
 // apertura (Chart.js ha bisogno del canvas visibile per dimensionarsi)
 let chartRendered = false;
+const toggleChartBtn = document.getElementById("toggle-chart");
 function toggleChart(force) {
   const sec = document.getElementById("chart-section");
   const show = force !== undefined ? force : !sec.classList.contains("open");
   sec.classList.toggle("open", show);
+  toggleChartBtn.setAttribute("aria-expanded", String(show));
   if (show && !chartRendered && PROVIDERS.gistemp.enabled) {
     chartRendered = true;
-    renderChart().catch((err) => setStatus(`Errore grafico: ${err.message}`, true));
+    renderChart().catch((err) => setChartStatus(`Errore grafico: ${err.message}`, true));
   }
+  // gestione focus: all'apertura entra nel pannello, alla chiusura torna al toggle
+  if (show) document.getElementById("close-chart").focus();
+  else toggleChartBtn.focus();
 }
-document.getElementById("toggle-chart").addEventListener("click", () => toggleChart());
+toggleChartBtn.addEventListener("click", () => toggleChart());
 document.getElementById("close-chart").addEventListener("click", () => toggleChart(false));
+// Esc chiude il pannello quando è aperto
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && document.getElementById("chart-section").classList.contains("open")) {
+    toggleChart(false);
+  }
+});
 
 (async () => {
   backend = await detectBackend();
