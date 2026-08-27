@@ -60,7 +60,8 @@ const json = (obj, status = 200, extraHeaders = {}) =>
 
 async function fetchWithRetry(url, { headers = {}, retries = 4 } = {}) {
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, { headers: { ...UA, ...headers } });
+    // timeout esplicito: senza, un upstream che pende consuma il budget del Worker
+    const res = await fetch(url, { headers: { ...UA, ...headers }, signal: AbortSignal.timeout(60000) });
     if (res.ok) return res;
     if (res.status === 429 && attempt < retries) {
       const retryAfter = Number(res.headers.get("Retry-After"));
@@ -77,7 +78,7 @@ async function fetchWithRetry(url, { headers = {}, retries = 4 } = {}) {
 
 /* KV cache: valore + timestamp in metadata. Se l'upstream fallisce ma esiste
  * una copia vecchia, viene servita con header X-Enlil-Stale. */
-async function proxyCached(env, key, ttlS, url) {
+async function proxyCached(env, key, ttlS, url, ctx) {
   const CT = "text/plain; charset=utf-8";
   const cached = await env.ENLIL_CACHE.getWithMetadata(key);
   if (cached.value !== null && cached.metadata?.ts && Date.now() / 1000 - cached.metadata.ts < ttlS) {
@@ -86,7 +87,8 @@ async function proxyCached(env, key, ttlS, url) {
   try {
     const up = await fetchWithRetry(url);
     const body = await up.text();
-    await env.ENLIL_CACHE.put(key, body, { metadata: { ts: Math.floor(Date.now() / 1000) } });
+    // scrittura KV in background: non blocca la risposta
+    ctx.waitUntil(env.ENLIL_CACHE.put(key, body, { metadata: { ts: Math.floor(Date.now() / 1000) } }));
     return new Response(body, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   } catch (err) {
     if (cached.value !== null) {
@@ -126,7 +128,7 @@ async function fetchGridMeans(grid, period) {
   return means;
 }
 
-async function handleGrid(env) {
+async function handleGrid(env, ctx) {
   const CT = "application/json";
   const cached = await env.ENLIL_CACHE.getWithMetadata("grid");
   if (cached.value !== null && cached.metadata?.ts && Date.now() / 1000 - cached.metadata.ts < GRID_TTL_S) {
@@ -144,9 +146,9 @@ async function handleGrid(env) {
       recent,
       baseline,
     });
-    await env.ENLIL_CACHE.put("grid", payload, {
+    ctx.waitUntil(env.ENLIL_CACHE.put("grid", payload, {
       metadata: { ts: Math.floor(Date.now() / 1000) },
-    });
+    }));
     return new Response(payload, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   } catch (err) {
     if (cached.value !== null) {
@@ -228,7 +230,7 @@ async function handleNoaaStation(env, url) {
 /* ---------------- Entrypoint ---------------- */
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     try {
       switch (url.pathname) {
@@ -241,16 +243,16 @@ export default {
           return json({ ok: true, providers: { noaa: Boolean(env.NOAA_TOKEN), era5 } }, 200, { "Cache-Control": NO_STORE });
         }
         case "/api/grid":
-          return await handleGrid(env);
+          return await handleGrid(env, ctx);
         case "/api/gistemp":
           return await proxyCached(env, "gistemp", SERIES_TTL_S,
-            "https://data.giss.nasa.gov/gistemp/tabledata_v4/GLB.Ts+dSST.csv");
+            "https://data.giss.nasa.gov/gistemp/tabledata_v4/GLB.Ts+dSST.csv", ctx);
         case "/api/hadcrut5":
           return await proxyCached(env, "hadcrut5", SERIES_TTL_S,
-            "https://www.metoffice.gov.uk/hadobs/hadcrut5/data/HadCRUT.5.1.0.0/analysis/diagnostics/HadCRUT.5.1.0.0.analysis.summary_series.global.monthly.csv");
+            "https://www.metoffice.gov.uk/hadobs/hadcrut5/data/HadCRUT.5.1.0.0/analysis/diagnostics/HadCRUT.5.1.0.0.analysis.summary_series.global.monthly.csv", ctx);
         case "/api/berkeley":
           return await proxyCached(env, "berkeley", SERIES_TTL_S,
-            "https://berkeley-earth-temperature.s3.amazonaws.com/Global/Land_and_Ocean_summary.txt");
+            "https://berkeley-earth-temperature.s3.amazonaws.com/Global/Land_and_Ocean_summary.txt", ctx);
         case "/api/noaa/station-data":
           return await handleNoaaStation(env, url);
         case "/api/era5":
