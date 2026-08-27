@@ -402,6 +402,22 @@ function parseBerkeley(txt) {
     .map((c) => ({ year: Number(c[0]), anomaly: Number(c[1]) }));
 }
 
+/* Riallinea una serie a una baseline climatologica comune: sottrae a ogni
+ * punto la media delle anomalie nel periodo [from, to]. Serve perché GISTEMP
+ * e Berkeley usano 1951–1980 mentre HadCRUT5 usa 1961–1990: senza questo le
+ * curve sembrano in disaccordo di ~0,1 °C. Se la serie copre meno di 25 anni
+ * della finestra, viene lasciata invariata (baseline non affidabile).
+ * NB: copia inline di lib/series.mjs — tenerle allineate. */
+function rebaseline(series, from = 1961, to = 1990) {
+  const inWindow = series.filter((d) => d.year >= from && d.year <= to);
+  if (inWindow.length < 25) {
+    console.warn(`rebaseline: solo ${inWindow.length} anni in ${from}-${to}, serie lasciata invariata`);
+    return series;
+  }
+  const mean = inWindow.reduce((a, d) => a + d.anomaly, 0) / inWindow.length;
+  return series.map((d) => ({ year: d.year, anomaly: d.anomaly - mean }));
+}
+
 async function renderChart() {
   setChartStatus("Carico le serie storiche…");
   const datasets = [];
@@ -432,6 +448,11 @@ async function renderChart() {
       } catch { /* fonte non disponibile: si salta */ }
     }
   }
+
+  // Riallinea tutte le serie alla stessa baseline 1961–1990: GISTEMP e
+  // Berkeley nascono su 1951–1980, HadCRUT5 su 1961–1990 → senza questo
+  // le curve appaiono sfalsate di ~0,1 °C pur essendo in accordo.
+  for (const s of seriesList) s.series = rebaseline(s.series, 1961, 1990);
 
   // asse X = unione degli anni di tutte le serie
   const years = [...new Set(seriesList.flatMap((s) => s.series.map((d) => d.year)))].sort((a, b) => a - b);
