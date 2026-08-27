@@ -188,7 +188,11 @@ async function handleNoaaStation(env, url) {
     return json({ error: "Parametri lat/lon mancanti o non validi" }, 400);
   }
   const h = { token: env.NOAA_TOKEN };
-  const extent = `${(lat - 1).toFixed(2)},${(lon - 1).toFixed(2)},${(lat + 1).toFixed(2)},${(lon + 1).toFixed(2)}`;
+  // clamp ai limiti geografici: vicino ai poli/antimeridiano lat±1 / lon±1
+  // uscirebbe da [-90,90] / [-180,180] e CDO risponderebbe 400
+  const clampLat = (v) => Math.max(-90, Math.min(90, v));
+  const clampLon = (v) => Math.max(-180, Math.min(180, v));
+  const extent = `${clampLat(lat - 1).toFixed(2)},${clampLon(lon - 1).toFixed(2)},${clampLat(lat + 1).toFixed(2)},${clampLon(lon + 1).toFixed(2)}`;
   const stRes = await fetchWithRetry(
     `https://www.ncei.noaa.gov/cdo-web/api/v2/stations?datasetid=GHCND&extent=${extent}&limit=25`,
     { headers: h }
@@ -210,12 +214,19 @@ async function handleNoaaStation(env, url) {
   const startD = new Date(endD);
   startD.setFullYear(startD.getFullYear() - 1);
   const end = fmtDate(endD);
-  const dataRes = await fetchWithRetry(
+  // 3 datatype x 365 giorni possono superare 1000 record: CDO li restituisce
+  // in ordine di data crescente, quindi troncare a 1000 sbilancerebbe la media
+  // verso i primi mesi. Si pagina con offset (1-based) fino a esaurimento.
+  const base =
     `https://www.ncei.noaa.gov/cdo-web/api/v2/data?datasetid=GHCND&stationid=${st.id}` +
-      `&datatypeid=TAVG&datatypeid=TMAX&datatypeid=TMIN&startdate=${fmtDate(startD)}&enddate=${end}&limit=1000&units=metric`,
-    { headers: h }
-  );
-  const rows = (await dataRes.json()).results || [];
+    `&datatypeid=TAVG&datatypeid=TMAX&datatypeid=TMIN&startdate=${fmtDate(startD)}&enddate=${end}&units=metric&limit=1000`;
+  const rows = [];
+  for (let offset = 1; offset <= 5000; offset += 1000) {
+    const dataRes = await fetchWithRetry(`${base}&offset=${offset}`, { headers: h });
+    const batch = (await dataRes.json()).results || [];
+    rows.push(...batch);
+    if (batch.length < 1000) break;
+  }
   const avg = (type) => {
     const v = rows.filter((r) => r.datatype === type).map((r) => r.value);
     return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
