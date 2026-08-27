@@ -82,7 +82,9 @@ def main():
     download(client, baseline_months, baseline_nc)
 
     delta = mean_of(recent_nc, recent_months) - mean_of(baseline_nc, baseline_months)
-    # sottocampiona a ~2.5° per un JSON leggero
+    # sottocampiona a ~2.5° per un JSON leggero. boundary="trim": la griglia
+    # ERA5 (721 lat) non è multipla di 10, quindi l'ultima fascia a sud
+    # (~-89.75°) viene scartata — irrilevante per la heatmap.
     delta = delta.coarsen(latitude=10, longitude=10, boundary="trim").mean()
 
     records = [
