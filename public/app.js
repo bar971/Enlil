@@ -60,7 +60,8 @@ function updateLegend(sourceLabel) {
   if (!legendDiv) return;
   legendDiv.innerHTML =
     '<div class="bar"></div>' +
-    "ΔT ultimi 12 mesi vs 40 anni fa<br>(°C): 0 → ≥ +3<br>" +
+    '<div class="legend-ticks"><span>0</span><span>+1</span><span>+2</span><span>≥ +3</span></div>' +
+    "ΔT ultimi 12 mesi vs 40 anni fa (°C)<br>" +
     `<span class="legend-src">Fonte: ${sourceLabel}</span>`;
 }
 const legend = L.control({ position: "bottomright" });
