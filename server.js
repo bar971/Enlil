@@ -288,6 +288,9 @@ function serveStatic(res, pathname) {
   if (!file.startsWith(PUBLIC_DIR)) return sendJson(res, 403, { error: "Forbidden" });
   fs.readFile(file, (err, content) => {
     if (err) return sendJson(res, 404, { error: "Not found" });
+    // index.html sempre rivalidato; gli altri asset cacheabili 1h
+    const isHtml = path.extname(file) === ".html";
+    res.setHeader("Cache-Control", isHtml ? "no-cache" : "public, max-age=3600");
     send(res, 200, content, MIME[path.extname(file)] || "application/octet-stream");
   });
 }

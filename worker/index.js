@@ -9,6 +9,13 @@
 const GRID_TTL_S = 12 * 3600;
 const SERIES_TTL_S = 24 * 3600;
 
+// Cache HTTP all'edge/nel browser: risposte fresche cacheabili 5 min, poi
+// servibili "stale" per 1h mentre si rivalida. Per le risposte già stale si
+// usa una finestra corta così tornano presto a rivalidarsi.
+const CACHE_FRESH = "public, max-age=300, stale-while-revalidate=3600";
+const CACHE_STALE = "public, max-age=60";
+const NO_STORE = "no-store";
+
 const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Enlil/1.0" };
 
 /* ---------------- Griglia e periodi (specchio di server.js e del frontend) ---------------- */
@@ -71,19 +78,20 @@ async function fetchWithRetry(url, { headers = {}, retries = 4 } = {}) {
 /* KV cache: valore + timestamp in metadata. Se l'upstream fallisce ma esiste
  * una copia vecchia, viene servita con header X-Enlil-Stale. */
 async function proxyCached(env, key, ttlS, url) {
+  const CT = "text/plain; charset=utf-8";
   const cached = await env.ENLIL_CACHE.getWithMetadata(key);
   if (cached.value !== null && cached.metadata?.ts && Date.now() / 1000 - cached.metadata.ts < ttlS) {
-    return new Response(cached.value, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    return new Response(cached.value, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   }
   try {
     const up = await fetchWithRetry(url);
     const body = await up.text();
     await env.ENLIL_CACHE.put(key, body, { metadata: { ts: Math.floor(Date.now() / 1000) } });
-    return new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    return new Response(body, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   } catch (err) {
     if (cached.value !== null) {
       return new Response(cached.value, {
-        headers: { "Content-Type": "text/plain; charset=utf-8", "X-Enlil-Stale": "1" },
+        headers: { "Content-Type": CT, "Cache-Control": CACHE_STALE, "X-Enlil-Stale": "1" },
       });
     }
     return json({ error: String(err.message || err) }, 502);
@@ -119,9 +127,10 @@ async function fetchGridMeans(grid, period) {
 }
 
 async function handleGrid(env) {
+  const CT = "application/json";
   const cached = await env.ENLIL_CACHE.getWithMetadata("grid");
   if (cached.value !== null && cached.metadata?.ts && Date.now() / 1000 - cached.metadata.ts < GRID_TTL_S) {
-    return new Response(cached.value, { headers: { "Content-Type": "application/json" } });
+    return new Response(cached.value, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   }
   try {
     const grid = buildGrid();
@@ -138,12 +147,12 @@ async function handleGrid(env) {
     await env.ENLIL_CACHE.put("grid", payload, {
       metadata: { ts: Math.floor(Date.now() / 1000) },
     });
-    return new Response(payload, { headers: { "Content-Type": "application/json" } });
+    return new Response(payload, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   } catch (err) {
     if (cached.value !== null) {
       const payload = JSON.parse(cached.value);
       payload.stale = true;
-      return json(payload);
+      return json(payload, 200, { "Cache-Control": CACHE_STALE });
     }
     // ultimo livello: snapshot statico committato (asset public/data/om-grid-seed.json)
     try {
@@ -152,7 +161,7 @@ async function handleGrid(env) {
         const payload = await seedRes.json();
         payload.stale = true;
         payload.seed = true;
-        return json(payload);
+        return json(payload, 200, { "Cache-Control": CACHE_STALE });
       }
     } catch { /* seed assente */ }
     return json(
@@ -213,7 +222,7 @@ async function handleNoaaStation(env, url) {
     station: { id: st.id, name: st.name, distanceKm: Math.round(dist(st)) },
     period: { start: fmtDate(startD), end },
     tavg: avg("TAVG"), tmax: avg("TMAX"), tmin: avg("TMIN"),
-  });
+  }, 200, { "Cache-Control": NO_STORE });
 }
 
 /* ---------------- Entrypoint ---------------- */
@@ -229,7 +238,7 @@ export default {
           try {
             era5 = (await env.ASSETS.fetch("http://assets/data/era5-grid.json")).ok;
           } catch { /* asset assente */ }
-          return json({ ok: true, providers: { noaa: Boolean(env.NOAA_TOKEN), era5 } });
+          return json({ ok: true, providers: { noaa: Boolean(env.NOAA_TOKEN), era5 } }, 200, { "Cache-Control": NO_STORE });
         }
         case "/api/grid":
           return await handleGrid(env);
