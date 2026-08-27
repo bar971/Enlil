@@ -9,7 +9,7 @@ Tre modalità d'uso:
 | Modalità | Come | Cosa funziona |
 |---|---|---|
 | **Cloudflare** (pubblica) | https://enlil.bar971.workers.dev | Tutto: Worker `worker/index.js`, statici da `public/`, cache su KV, NOAA via secret |
-| **Backend locale** | `node server.js` → http://localhost:8000 | Identico, con cache su filesystem (`data/cache/`) |
+| **Backend locale** | `node server.mjs` → http://localhost:8000 | Identico, con cache su filesystem (`data/cache/`) |
 | **Standalone** | apri `public/index.html` nel browser | Mappa Open-Meteo (fetch diretto, cache in localStorage) + grafico GISTEMP da snapshot embedded |
 
 Nessuna dipendenza npm: il backend locale è Node puro (`node:http`), il Worker è JS standard.
@@ -31,7 +31,7 @@ Nessuna dipendenza npm: il backend locale è Node puro (`node:http`), il Worker 
 
 ### NOAA CDO (dati per stazione)
 1. Token gratuito via email: https://www.ncei.noaa.gov/cdo-web/token
-2. Locale: `NOAA_TOKEN=xxx node server.js` (oppure riga in `.env`)
+2. Locale: `NOAA_TOKEN=xxx node server.mjs` (oppure riga in `.env`)
 3. Cloudflare: `npx wrangler secret put NOAA_TOKEN`
 
 ## Deploy Cloudflare

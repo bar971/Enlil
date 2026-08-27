@@ -4,14 +4,17 @@
 
 ## Cos'è
 
-Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-politica, più serie storiche globali a confronto. Architettura: **backend Node.js zero-dipendenze** (`server.js`, solo `node:http`) + **frontend statico** (`index.html`, `app.js`, `style.css`) con Leaflet + Chart.js da CDN. Tutte le fonti di `clima.md` sono integrate.
+Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-politica, più serie storiche globali a confronto. Architettura: **backend Node.js zero-dipendenze** (`server.mjs` + `lib/core.mjs`, solo moduli `node:`) + **frontend statico** (`index.html`, `app.js`, `style.css`) con Leaflet + Chart.js da CDN. Tutte le fonti di `clima.md` sono integrate.
 
 ## Struttura file
 
 | File | Ruolo |
 |---|---|
 | `index.html` / `style.css` / `app.js` | Frontend: mappa Leaflet, heatmap, marker, grafico a scomparsa |
-| `server.js` | Backend: static serving + proxy con cache + snapshot griglia + NOAA + ERA5 |
+| `server.mjs` | Backend: static serving + proxy con cache su file + server HTTP |
+| `worker/index.js` | Cloudflare Worker: stesse rotte, cache su KV, Cron Trigger |
+| `lib/core.mjs` | Logica condivisa server↔worker: griglia, periodi, fetch/retry, Open-Meteo, NOAA (solo API standard, niente `node:`) |
+| `lib/series.mjs` | Parser canonici delle serie storiche (fonte per i test; `app.js` ne tiene una copia inline) |
 | `data/gistemp.js` | Snapshot NASA GISTEMP embedded (fallback senza backend) |
 | `data/era5-grid.json` | Griglia ERA5 precomputata (10.368 punti, ~500 KB) — generata da script |
 | `data/cache/` | Cache runtime del backend (gitignored): grid.json, gistemp.csv, hadcrut5.csv, berkeley.txt |
@@ -34,7 +37,7 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 
 1. Clonare il repo progetto e, come cartella sorella, il repo `Enlil-secrets`
 2. Copiare dai secrets: `.env` → root del progetto; `cdsapirc` → `~/.cdsapirc`
-3. `node server.js` → http://localhost:8000 (funziona subito: griglia da snapshot ERA5+Open-Meteo, serie da proxy)
+3. `node server.mjs` → http://localhost:8000 (funziona subito: griglia da snapshot ERA5+Open-Meteo, serie da proxy)
 4. Solo per rigenerare ERA5: installare Python 3.13, `python -m venv .venv`, `.venv/Scripts/pip install cdsapi xarray netCDF4`, poi `.venv/Scripts/python scripts/fetch_era5.py`
 
 ## Comportamenti non ovvi (imparati sul campo)
