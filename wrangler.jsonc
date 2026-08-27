@@ -2,6 +2,10 @@
   "name": "enlil",
   "main": "worker/index.js",
   "compatibility_date": "2025-09-01",
+  "triggers": {
+    // pre-scalda la KV (grid + serie) ogni 6h, prima che la cache scada
+    "crons": ["0 */6 * * *"]
+  },
   "assets": {
     "directory": "./public",
     "binding": "ASSETS"

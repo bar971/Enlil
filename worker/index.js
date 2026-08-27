@@ -16,7 +16,19 @@ const CACHE_FRESH = "public, max-age=300, stale-while-revalidate=3600";
 const CACHE_STALE = "public, max-age=60";
 const NO_STORE = "no-store";
 
+// Serie storiche globali: chiave KV -> URL upstream. Usato dal proxy e dal cron.
+const SERIES = {
+  gistemp: "https://data.giss.nasa.gov/gistemp/tabledata_v4/GLB.Ts+dSST.csv",
+  hadcrut5:
+    "https://www.metoffice.gov.uk/hadobs/hadcrut5/data/HadCRUT.5.1.0.0/analysis/diagnostics/HadCRUT.5.1.0.0.analysis.summary_series.global.monthly.csv",
+  berkeley: "https://berkeley-earth-temperature.s3.amazonaws.com/Global/Land_and_Ocean_summary.txt",
+};
+
 const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Enlil/1.0" };
+
+// KV put con timestamp nei metadata (formato condiviso da proxy, grid e cron)
+const kvPut = (env, key, body) =>
+  env.ENLIL_CACHE.put(key, body, { metadata: { ts: Math.floor(Date.now() / 1000) } });
 
 /* ---------------- Griglia e periodi (specchio di server.js e del frontend) ---------------- */
 
@@ -88,7 +100,7 @@ async function proxyCached(env, key, ttlS, url, ctx) {
     const up = await fetchWithRetry(url);
     const body = await up.text();
     // scrittura KV in background: non blocca la risposta
-    ctx.waitUntil(env.ENLIL_CACHE.put(key, body, { metadata: { ts: Math.floor(Date.now() / 1000) } }));
+    ctx.waitUntil(kvPut(env, key, body));
     return new Response(body, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   } catch (err) {
     if (cached.value !== null) {
@@ -128,6 +140,16 @@ async function fetchGridMeans(grid, period) {
   return means;
 }
 
+/* Costruisce il payload della griglia (fetch Open-Meteo per i due periodi).
+ * Separato da handleGrid così lo riusa anche il cron (refreshGrid). */
+async function buildGridPayload() {
+  const grid = buildGrid();
+  const periods = buildPeriods();
+  const recent = await fetchGridMeans(grid, periods.recent);
+  const baseline = await fetchGridMeans(grid, periods.baseline);
+  return JSON.stringify({ fetchedAt: new Date().toISOString(), periods, grid, recent, baseline });
+}
+
 async function handleGrid(env, ctx) {
   const CT = "application/json";
   const cached = await env.ENLIL_CACHE.getWithMetadata("grid");
@@ -135,20 +157,8 @@ async function handleGrid(env, ctx) {
     return new Response(cached.value, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   }
   try {
-    const grid = buildGrid();
-    const periods = buildPeriods();
-    const recent = await fetchGridMeans(grid, periods.recent);
-    const baseline = await fetchGridMeans(grid, periods.baseline);
-    const payload = JSON.stringify({
-      fetchedAt: new Date().toISOString(),
-      periods,
-      grid,
-      recent,
-      baseline,
-    });
-    ctx.waitUntil(env.ENLIL_CACHE.put("grid", payload, {
-      metadata: { ts: Math.floor(Date.now() / 1000) },
-    }));
+    const payload = await buildGridPayload();
+    ctx.waitUntil(kvPut(env, "grid", payload));
     return new Response(payload, { headers: { "Content-Type": CT, "Cache-Control": CACHE_FRESH } });
   } catch (err) {
     if (cached.value !== null) {
@@ -273,9 +283,40 @@ async function handleNoaaStation(env, url, request, ctx) {
   }, 200);
 }
 
+/* ---------------- Cron: pre-scalda la KV ---------------- */
+/* Gli egress di Cloudflare sono IP condivisi: a KV fredda il primo
+ * visitatore paga tutti i retry 429 di Open-Meteo (o fallisce). Un Cron
+ * Trigger rigenera grid e serie in background prima che la cache scada. */
+
+async function refreshGrid(env) {
+  try {
+    await kvPut(env, "grid", await buildGridPayload());
+    console.log("cron: grid aggiornata");
+  } catch (err) {
+    console.warn("cron: refreshGrid fallito:", err.message);
+  }
+}
+
+async function refreshSeries(env) {
+  for (const [key, url] of Object.entries(SERIES)) {
+    try {
+      const up = await fetchWithRetry(url);
+      await kvPut(env, key, await up.text());
+      console.log(`cron: ${key} aggiornata`);
+    } catch (err) {
+      console.warn(`cron: refresh ${key} fallito:`, err.message);
+    }
+  }
+}
+
 /* ---------------- Entrypoint ---------------- */
 
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(refreshGrid(env));
+    ctx.waitUntil(refreshSeries(env));
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     try {
@@ -291,14 +332,11 @@ export default {
         case "/api/grid":
           return await handleGrid(env, ctx);
         case "/api/gistemp":
-          return await proxyCached(env, "gistemp", SERIES_TTL_S,
-            "https://data.giss.nasa.gov/gistemp/tabledata_v4/GLB.Ts+dSST.csv", ctx);
+          return await proxyCached(env, "gistemp", SERIES_TTL_S, SERIES.gistemp, ctx);
         case "/api/hadcrut5":
-          return await proxyCached(env, "hadcrut5", SERIES_TTL_S,
-            "https://www.metoffice.gov.uk/hadobs/hadcrut5/data/HadCRUT.5.1.0.0/analysis/diagnostics/HadCRUT.5.1.0.0.analysis.summary_series.global.monthly.csv", ctx);
+          return await proxyCached(env, "hadcrut5", SERIES_TTL_S, SERIES.hadcrut5, ctx);
         case "/api/berkeley":
-          return await proxyCached(env, "berkeley", SERIES_TTL_S,
-            "https://berkeley-earth-temperature.s3.amazonaws.com/Global/Land_and_Ocean_summary.txt", ctx);
+          return await proxyCached(env, "berkeley", SERIES_TTL_S, SERIES.berkeley, ctx);
         case "/api/noaa/station-data":
           return await handleNoaaStation(env, url, request, ctx);
         case "/api/era5":
