@@ -237,7 +237,9 @@ async function loadOpenMeteoLayer() {
     periods = payload.periods;
     recentMeans = payload.recent;
     baselineMeans = payload.baseline;
-    source = payload.stale
+    source = payload.seed
+      ? "snapshot statico del repo, Open-Meteo non raggiungibile"
+      : payload.stale
       ? "snapshot backend (datato: quota Open-Meteo esaurita)"
       : "backend (cache condivisa)";
   } else {

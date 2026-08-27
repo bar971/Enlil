@@ -145,6 +145,16 @@ async function handleGrid(env) {
       payload.stale = true;
       return json(payload);
     }
+    // ultimo livello: snapshot statico committato (asset public/data/om-grid-seed.json)
+    try {
+      const seedRes = await env.ASSETS.fetch("http://assets/data/om-grid-seed.json");
+      if (seedRes.ok) {
+        const payload = await seedRes.json();
+        payload.stale = true;
+        payload.seed = true;
+        return json(payload);
+      }
+    } catch { /* seed assente */ }
     return json(
       { error: `Open-Meteo non raggiungibile e nessuno snapshot disponibile: ${err.message}` },
       503
