@@ -40,12 +40,6 @@ main {
 
 .status.error { color: #ff8a80; }
 
-#chart-section {
-  background: #171e28;
-  border-radius: 10px;
-  padding: 1rem;
-}
-
 #chart-section h2 {
   margin: 0 0 0.75rem;
   font-size: 1rem;
@@ -80,6 +74,8 @@ main {
   height: 100dvh;
   width: min(520px, 94vw);
   margin: 0;
+  padding: 1rem;
+  background: #171e28;
   border-radius: 0;
   transform: translateX(105%);
   transition: transform 0.25s ease;
