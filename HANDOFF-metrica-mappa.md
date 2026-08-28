@@ -3,55 +3,93 @@
 > Le Fasi 1–8 del piano di analisi precedente sono COMPLETATE e in produzione
 > (`master` @ `387797a`). Questo file ora descrive il follow-up §4.1.
 
-## STATO ESECUZIONE (2026-08-27, interrotto su richiesta — continuare altrove)
+## STATO ESECUZIONE (agg. 2026-08-28 ~05:30 UTC — sospeso: PC senza connessione)
 
-Branch **`metrica-mappa`** pushato su origin, 5 commit (`41d8b5f`..`5110318`).
-**NON mergiato su master, NON deployato.**
+Branch **`metrica-mappa`** su origin. **NON mergiato su master, NON deployato.**
+Ultimo commit = checkpoint WIP di questa sessione (climatologia parziale + fix
+script). I commit `41d8b5f`..`5110318` + `9cdb694` restano la base.
 
-FATTO e verificato:
-- Codice completo: `lib/core.mjs` (buildPeriods→`{recent,climatology}`,
-  `buildGridPayload(climatologyMeans)`), `server.mjs` + `worker/index.js`
-  (caricano l'asset climatologia), `app.js` + `index.html` (metrica, testi,
-  standalone con `OM_CLIMATOLOGY` embedded), `scripts/gen_om_climatology.mjs`,
-  `scripts/fetch_era5.py` (baseline 1961–1990 + emette la climatologia OM).
-- `node --test` → 13/13 pass (nuovo assert su `buildPeriods`).
-- `server.mjs` `/api/grid` restituisce la forma nuova (seed fallback, perché
-  Open-Meteo è in 429): `periods.climatology` OK, ΔT media +1,24 °C.
-- **ERA5 rigenerato e CORRETTO**: `public/data/era5-grid.json` nuova metrica —
-  media anomalia globale **+1,41 °C**, range −0,83…+7,12 (più stretto),
-  Artico +2,94 vs Tropici +0,78. Questo layer è pronto.
+### FATTO e verificato (questa sessione, PC nuovo con `../Enlil-secrets`)
+- Setup: `Enlil/.env` (da `../Enlil-secrets/.env`, gitignored) e `~/.cdsapirc`
+  (da `../Enlil-secrets/cdsapirc`) copiati. Branch locale `metrica-mappa`
+  tracking origin. wrangler loggato: OAuth `bar971@yahoo.it`, account
+  `dcaf61703f63be2dcb360a0c2af4bc56`, namespace KV `enlil-cache`
+  `076d8cde3bef436eabed421aa3e51546` visibile.
+- `node --test` → **13/13 pass**.
+- Codice branch (core/server/worker/app/index.html) invariato e coerente:
+  `buildPeriods→{recent,climatology}`, `buildGridPayload(climatologyMeans)`,
+  `loadClimatology()` in server e worker, label nuove nel frontend.
+- **`scripts/gen_om_climatology.mjs` MODIFICATO** (approvato dall'utente):
+  range 1961–1990 spezzato in **3 decadi** (1961-70 / 71-80 / 81-90) con media
+  pesata sui giorni validi → **risultato identico** a una richiesta unica sul
+  trentennio; pacing configurabile da env `OM_CLIM_CHUNK` (def 25),
+  `OM_CLIM_DELAY_MS` (def 4000), `OM_CLIM_WINDOW_DELAY_MS` (def 2000);
+  `fetchWithRetry(..., { retries: 2 })`.
+- ERA5 (`public/data/era5-grid.json`, commit `f591682`): nuova metrica,
+  media anomalia globale **+1,41 °C** (da riverificare con headless, non
+  ri-misurato in questa sessione). Layer pronto.
 
-BLOCCATO:
-- **Quota giornaliera Open-Meteo esaurita** ("try again tomorrow", reset 00:00
-  UTC). `scripts/gen_om_climatology.mjs` non ha potuto girare.
-- `public/data/om-climatology-1961-1990.json` e `om-climatology.js` committati
-  sono **PROVVISORI** — campionati da ERA5 da `fetch_era5.py`. Verificato: ~20
-  punti su 306 (poli/coste) hanno artefatti grossi (es. lat −70: ΔT −6,9 dove
-  ERA5 dà +2,0). **Non deployabile così**: la mappa OM mostrerebbe blu spurio
-  ai poli.
+### PARZIALE — climatologia OM (il blocco)
+- `public/data/om-climatology-1961-1990.json` = **204/306 punti REALI**
+  Open-Meteo (tutti validi, no null; min −53,3 / max +28,3 °C; media parziale
+  +9,8 °C — cambierà con i punti nord). `om-climatology.js` rigenerato coerente
+  col parziale (header "PARZIALE 204/306"). Entrambi verranno **riscritti
+  completi (306) dallo script** al termine.
+- I 204 punti seguono l'ordine di `buildGrid()`: lat −80 → ~lat +40. **Mancano
+  ~102 punti alle latitudini nord alte** (lat +40..+80).
+- **Causa blocco: rate-limit Open-Meteo per PESO delle richieste** (query
+  multi-anno costose). **NON è un ban IP** — probe minima (1 punto, 10 giorni)
+  → HTTP 200. Il reset giornaliero 00:00 UTC aiuta ma il budget si esaurisce
+  dopo poche decine di richieste-decade. La versione "gentile" (chunk 6, 12s
+  tra decadi, 30s tra chunk) ha aggiunto 54 punti in ~10 min prima del 429.
+- Nota: un wrapper di retry troppo aggressivo (2026-08-27 pomeriggio) ha
+  bruciato budget su richieste fallite e allungato il throttle. Riprendere
+  **leggeri**, una passata per volta.
 
-PER CHIUDERE (dopo reset quota Open-Meteo, ~00:00 UTC):
-1. `git checkout metrica-mappa`
-2. `node scripts/gen_om_climatology.mjs` (resume-safe; ~13 richieste, pochi
-   minuti) → rigenera `om-climatology-1961-1990.json` + `om-climatology.js`
-   con dati Open-Meteo veri.
-3. Rigenerare `om-grid-seed.json`: prendere `recent` dal dump KV `grid` di
-   produzione (metrica-indipendente) + `baseline` = nuova climatologia.
-   Script già usato: vedi comando in cronologia (KV get + node one-liner).
-4. `node --test`; verifica headless (`server.mjs` + `file://`): popup con
-   "Media climatologica 1961–1990"/"Anomalia…", legenda aggiornata, ΔT media
-   ~+1,2…+1,4, niente blu spurio ai poli, 0 violazioni CSP.
-5. `git commit --amend` sul commit `43dad18` (o commit nuovo) con la
-   climatologia vera; aggiornare la NOTA "PROVVISORIA" nei messaggi/HANDOFF.
-6. `git checkout master && git merge --no-ff metrica-mappa && git push`
-7. `npx wrangler deploy` (l'auto-deploy non sincronizza i trigger).
-8. Re-seed KV `grid` con la nuova metrica:
-   `npx wrangler kv key put grid --namespace-id 076d8cde3bef436eabed421aa3e51546 --path <nuovo-payload> --metadata '{"ts": <epoch>}'`
-   (payload = `om-grid-seed.json` senza i flag `seed`/`stale`).
-9. Verifica prod: `/api/grid` nuova metrica, headless nelle 3 modalità,
-   `wrangler tail` a freddo.
-10. Aggiornare i "Debiti noti" di HANDOFF (togliere la nota climatologia
-    provvisoria) e la memoria progetto se serve.
+### Decisioni utente (questa sessione)
+- `recent` per il nuovo `om-grid-seed.json`: **riusare quello già committato**
+  nel seed sul branch (la KV `grid` di produzione è **vuota**, "Value not
+  found" — non è una fonte per `recent`).
+- Ambito: eseguire **fino a produzione** (merge `--no-ff` + `wrangler deploy` +
+  re-seed KV `grid`).
+- Fix script gen_om_climatology (decadi + pacing env): approvato.
+
+### PER CHIUDERE (riprendere quando Open-Meteo è di nuovo servibile)
+1. `git checkout metrica-mappa && git pull`
+2. **Riprendere la climatologia** (resume-safe, riparte da 204/306). Footprint
+   leggero, idealmente subito dopo un reset 00:00 UTC:
+   ```
+   OM_CLIM_CHUNK=6 OM_CLIM_DELAY_MS=30000 OM_CLIM_WINDOW_DELAY_MS=12000 \
+     node scripts/gen_om_climatology.mjs
+   ```
+   Rilanciare finché `mean.length === 306` (su 429: aspettare il reset). Al
+   termine lo script riscrive `om-climatology-1961-1990.json` (306) e
+   `om-climatology.js` (306, header pulito).
+3. Verifica valori: 306 medie plausibili (~ −55…+30 °C), **niente artefatti ai
+   poli** (confronto con ERA5).
+4. Rigenerare `public/data/om-grid-seed.json`: caricare il seed committato,
+   sostituire `.baseline` con `om-climatology-1961-1990.json` `.mean` (306
+   valori, stesso ordine di `buildGrid()`), lasciare invariato il resto
+   (`recent`, `grid`, `periods`, `fetchedAt`, `seed`). One-liner node.
+5. `node --test` (atteso 13/13).
+6. Verifica programmatica/headless nelle 3 modalità (`node server.mjs` +
+   `file://`): `/api/grid` con `periods.climatology`, ΔT media ~+1,2…+1,4,
+   popup "Media climatologica 1961–1990" / "Anomalia…", legenda "Anomalia:
+   ultimi 12 mesi vs media 1961–1990", niente blu spurio ai poli, 0 CSP.
+7. Commit finale sul branch: climatologia reale 306/306; togliere note
+   "PARZIALE"/"PROVVISORIO".
+8. Docs: `HANDOFF.md` (metrica mappa nuova, nuovi file, togliere §4.1 dai
+   "Debiti noti"), `README.md` (descrizione mappa). Poi **eliminare questo
+   file** `HANDOFF-metrica-mappa.md` (piano realizzato).
+9. `git checkout master && git merge --no-ff metrica-mappa && git push`
+   (mai `.env`).
+10. `npx wrangler deploy`.
+11. Re-seed KV `grid` con la nuova metrica:
+    `npx wrangler kv key put grid --namespace-id 076d8cde3bef436eabed421aa3e51546 --path <payload> --metadata '{"ts": <epoch>}'`
+    — payload = `om-grid-seed.json` senza i flag `seed`/`stale`.
+12. Verifica prod: `curl https://enlil.bar971.workers.dev/api/grid` nuova
+    metrica, 3 modalità, `wrangler tail` a freddo.
+13. Aggiornare "Debiti noti" di `HANDOFF.md` + memoria progetto se serve.
 
 ## Context
 
