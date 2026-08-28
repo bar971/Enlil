@@ -361,11 +361,20 @@ map.on("click", async (e) => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     const fmtVal = (v) => (v === null ? "n/d" : `${v.toFixed(1)} °C`);
+    const fmtDay = (d) => (d ? `${d.date} (${d.value.toFixed(1)} °C)` : "n/d");
+    // le voci in cache KV precedenti al deploy non hanno warmestDay/coldestDay:
+    // in quel caso si omettono le righe invece di mostrare "n/d" per giorni
+    const estremi =
+      "warmestDay" in data
+        ? `<br>Giorno più caldo (TMAX): ${fmtDay(data.warmestDay)}` +
+          `<br>Giorno più freddo (TMIN): ${fmtDay(data.coldestDay)}`
+        : "";
     popup.setContent(
       `<b>Stazione NOAA più vicina</b><br>` +
         `${data.station.name} <small>(${data.station.id})</small><br>` +
         `Media ultimo anno (${data.period.start} → ${data.period.end}):<br>` +
-        `TAVG: <b>${fmtVal(data.tavg)}</b> · TMAX: ${fmtVal(data.tmax)} · TMIN: ${fmtVal(data.tmin)}`
+        `TAVG: <b>${fmtVal(data.tavg)}</b> · TMAX: ${fmtVal(data.tmax)} · TMIN: ${fmtVal(data.tmin)}` +
+        estremi
     );
   } catch (err) {
     popup.setContent(`NOAA CDO: ${err.message}`);
