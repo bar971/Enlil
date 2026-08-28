@@ -3,11 +3,30 @@
 > Le Fasi 1–8 del piano di analisi precedente sono COMPLETATE e in produzione
 > (`master` @ `387797a`). Questo file ora descrive il follow-up §4.1.
 
-## STATO ESECUZIONE (agg. 2026-08-28 ~05:30 UTC — sospeso: PC senza connessione)
+## STATO ESECUZIONE (agg. 2026-08-28 ~08:00 UTC — sospeso: budget Open-Meteo esaurito, riprendere dopo le 00:00 UTC)
 
-Branch **`metrica-mappa`** su origin. **NON mergiato su master, NON deployato.**
-Ultimo commit = checkpoint WIP di questa sessione (climatologia parziale + fix
-script). I commit `41d8b5f`..`5110318` + `9cdb694` restano la base.
+Branch **`metrica-mappa`** su origin, **allineato a `origin/metrica-mappa`**.
+**NON mergiato su master, NON deployato.** Ultimo commit = checkpoint WIP
+(climatologia 264/306). I commit `41d8b5f`..`5110318` + `9cdb694` + i due
+checkpoint WIP restano la base.
+
+### NOTA: `master` è avanzato (feature NON di questo piano)
+In questa sessione è stata sviluppata e **deployata in produzione** una feature
+indipendente: nel popup della stazione NOAA ora compaiono "Giorno più caldo
+(TMAX)" e "Giorno più freddo (TMIN)" con data e valore.
+- Branch `noaa-popup-estremi` (da `master` 387797a) → merge `--no-ff` `5effe3c`
+  su `master` → `git push` → `npx wrangler deploy` (Version ID
+  `e5e09460-6046-4ea8-bb9b-6e0454af1999`). Branch feature già **eliminato**
+  (locale + origin).
+- File toccati: `lib/core.mjs` (`noaaStationData` ora restituisce anche
+  `warmestDay` / `coldestDay` = `{date,value}` o `null`), `public/app.js`
+  (2 righe nel popup, con guardia `"warmestDay" in data` → voci KV `noaa:*`
+  pre-deploy, TTL 7 gg, mostrano il popup senza le righe nuove finché non
+  scadono). `node --test` 12/12. Verificato live su `enlil.bar971.workers.dev`.
+- **`master` ora = `5effe3c`, non più `387797a`.** Quando si mergerà
+  `metrica-mappa` su `master` questa feature è già dentro (nessun conflitto
+  atteso: `metrica-mappa` non tocca la sezione popup NOAA di `app.js` né
+  `noaaStationData`).
 
 ### FATTO e verificato (questa sessione, PC nuovo con `../Enlil-secrets`)
 - Setup: `Enlil/.env` (da `../Enlil-secrets/.env`, gitignored) e `~/.cdsapirc`
@@ -30,21 +49,26 @@ script). I commit `41d8b5f`..`5110318` + `9cdb694` restano la base.
   ri-misurato in questa sessione). Layer pronto.
 
 ### PARZIALE — climatologia OM (il blocco)
-- `public/data/om-climatology-1961-1990.json` = **204/306 punti REALI**
-  Open-Meteo (tutti validi, no null; min −53,3 / max +28,3 °C; media parziale
-  +9,8 °C — cambierà con i punti nord). `om-climatology.js` rigenerato coerente
-  col parziale (header "PARZIALE 204/306"). Entrambi verranno **riscritti
+- `public/data/om-climatology-1961-1990.json` = **264/306 punti REALI**
+  Open-Meteo (tutti validi, no null; min −53,3 / max +28,3 °C). `om-climatology.js`
+  risincronizzato a 264 (header "PARZIALE 264/306"). Entrambi verranno **riscritti
   completi (306) dallo script** al termine.
-- I 204 punti seguono l'ordine di `buildGrid()`: lat −80 → ~lat +40. **Mancano
-  ~102 punti alle latitudini nord alte** (lat +40..+80).
-- **Causa blocco: rate-limit Open-Meteo per PESO delle richieste** (query
-  multi-anno costose). **NON è un ban IP** — probe minima (1 punto, 10 giorni)
-  → HTTP 200. Il reset giornaliero 00:00 UTC aiuta ma il budget si esaurisce
-  dopo poche decine di richieste-decade. La versione "gentile" (chunk 6, 12s
-  tra decadi, 30s tra chunk) ha aggiunto 54 punti in ~10 min prima del 429.
-- Nota: un wrapper di retry troppo aggressivo (2026-08-27 pomeriggio) ha
-  bruciato budget su richieste fallite e allungato il throttle. Riprendere
-  **leggeri**, una passata per volta.
+- I 264 punti seguono l'ordine di `buildGrid()`. **Mancano 42 punti** alle
+  latitudini nord alte (dal punto `{lat:60, lon:60}` in poi).
+- Progressione: sessione 2026-08-27 → 150; mattina 2026-08-28 (~05:20 UTC) → 204;
+  passata di questa sessione (~07:15 UTC, chunk 6 / 30s / 12s) → **264**, poi
+  HTTP 429 persistente (2 retry falliti) → script uscito con codice 1.
+- **Causa blocco: rate-limit Open-Meteo per PESO delle richieste.** Formula
+  ufficiale (https://open-meteo.com/en/pricing):
+  `chiamate = (n°variabili/10) × (n°giorni/14)` per location, ogni location di
+  un batch conta a sé. Limiti free: 600/min · 5.000/ora · **10.000/giorno**,
+  reset **00:00 UTC**. Un download 30 anni × 306 punti ≈ **23.900 chiamate**
+  (≈2,4× il giorno). Con lo split a 3 decadi il costo per punto è identico
+  (~78) ma spalmabile: i **42 punti mancanti ≈ 3.300 chiamate**, dentro il
+  budget di un giorno pieno.
+- **NON è un ban IP** — probe minima → HTTP 200. Non insistere sul 429:
+  brucia budget su richieste fallite e allunga il throttle. Riprendere
+  **leggeri**, una passata, **subito dopo un reset 00:00 UTC**.
 
 ### Decisioni utente (questa sessione)
 - `recent` per il nuovo `om-grid-seed.json`: **riusare quello già committato**
@@ -55,9 +79,12 @@ script). I commit `41d8b5f`..`5110318` + `9cdb694` restano la base.
 - Fix script gen_om_climatology (decadi + pacing env): approvato.
 
 ### PER CHIUDERE (riprendere quando Open-Meteo è di nuovo servibile)
-1. `git checkout metrica-mappa && git pull`
-2. **Riprendere la climatologia** (resume-safe, riparte da 204/306). Footprint
-   leggero, idealmente subito dopo un reset 00:00 UTC:
+1. `git checkout metrica-mappa && git pull`  (su altro PC: serve anche
+   `Enlil/.env` da `../Enlil-secrets/.env` e `~/.cdsapirc` da
+   `../Enlil-secrets/cdsapirc` — v. sotto "Setup altro PC")
+2. **Riprendere la climatologia** (resume-safe, riparte da 264/306, ~3.300
+   chiamate → sta in un giorno). Footprint leggero, subito dopo un reset
+   00:00 UTC:
    ```
    OM_CLIM_CHUNK=6 OM_CLIM_DELAY_MS=30000 OM_CLIM_WINDOW_DELAY_MS=12000 \
      node scripts/gen_om_climatology.mjs
@@ -90,6 +117,27 @@ script). I commit `41d8b5f`..`5110318` + `9cdb694` restano la base.
 12. Verifica prod: `curl https://enlil.bar971.workers.dev/api/grid` nuova
     metrica, 3 modalità, `wrangler tail` a freddo.
 13. Aggiornare "Debiti noti" di `HANDOFF.md` + memoria progetto se serve.
+
+## Setup altro PC (per ripartire da zero)
+
+1. `git clone https://github.com/bar971/Enlil.git` e, come cartella sorella,
+   `git clone https://github.com/bar971/Enlil-secrets.git` (privato).
+2. `cd Enlil && git checkout metrica-mappa`.
+3. `cp ../Enlil-secrets/.env .env`  (gitignored; contiene `NOAA_TOKEN`).
+4. `cp ../Enlil-secrets/cdsapirc ~/.cdsapirc`  (serve solo per `fetch_era5.py`,
+   non per la climatologia OM).
+5. `npm ci` (o `npm install`).
+6. `npx wrangler login` se si deve deployare (OAuth `bar971@yahoo.it`, account
+   `dcaf61703f63be2dcb360a0c2af4bc56`, namespace KV `enlil-cache`
+   `076d8cde3bef436eabed421aa3e51546`).
+7. `node --test` per sanity check, poi riprendere dal punto 2 di "PER CHIUDERE".
+
+Stato repo al momento del salvataggio (2026-08-28 ~08:00 UTC):
+- `github.com/bar971/Enlil` — `master` = `5effe3c` (feature popup NOAA, deployata);
+  `metrica-mappa` = checkpoint WIP climatologia 264/306. Locale == origin per
+  entrambi.
+- `github.com/bar971/Enlil-secrets` — `master`, invariato in questa sessione
+  (solo letto `.env`). Nessun segreto nuovo da sincronizzare.
 
 ## Context
 
