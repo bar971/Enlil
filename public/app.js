@@ -29,18 +29,21 @@ async function detectBackend() {
 /* ---------------- Mappa ---------------- */
 
 /* Mappa vincolata: un solo mondo (niente ripetizioni orizzontali),
- * niente zoom-out oltre la vista dell'intero globo, pan confinato ai bordi. */
+ * pan confinato ai bordi. Zoom-out consentito un livello sotto la vista
+ * dell'intero globo (il mondo resta centrato con un margine attorno). */
 const WORLD_BOUNDS = L.latLngBounds([-90, -180], [90, 180]);
 const map = L.map("map", {
   maxBounds: WORLD_BOUNDS,
   maxBoundsViscosity: 1.0,
   maxZoom: 12,
 });
-// minZoom = livello a cui il mondo intero riempie la viewport.
+// worldZoom = livello a cui il mondo intero riempie la viewport.
 // Math.floor (non ceil): ceil può arrotondare a un livello troppo stretto,
 // impedendo di vedere l'intero globo con i suoi margini.
 const worldZoom = Math.floor(map.getBoundsZoom(WORLD_BOUNDS, true));
-map.setMinZoom(worldZoom);
+// minZoom un gradino più basso: un po' di respiro attorno al globo, utile
+// alle alte latitudini dove Mercator stira le righe della griglia.
+map.setMinZoom(Math.max(0, worldZoom - 1));
 map.fitBounds(WORLD_BOUNDS);
 // Basemap geo-politica Esri World Dark Gray: confini e nomi degli stati
 // (i nomi compaiono automaticamente ai livelli di zoom in cui sono leggibili).
