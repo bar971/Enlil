@@ -61,10 +61,12 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - **Verifica visiva con Playwright headless** (Chromium su http://localhost:8000): rendering mappa, selettore layer OM/ERA5, pannello grafico con 3 serie, vincoli zoom/pan (10 zoom-out forzati non spostano la vista), legenda fonte attiva. Così è stato trovato e corretto il bug delle longitudini ERA5 0..360.
 - Test Playwright non committati: erano in `/tmp/pwtest` (playwright-core + Chromium già presente in `%LOCALAPPDATA%/ms-playwright`).
 
-### Aggiornamento 2026-08-29 (branch `metrica-mappa`)
+### Aggiornamento 2026-08-29 — metrica mappa 1961-1990 IN PRODUZIONE
 - Climatologia Open-Meteo 1961-1990 completata a **306/306 punti reali** (min −53,3 / max +28,3 °C, media 6,63 °C). Ultimi 42 punti scaricati via routine cloud subito dopo il reset quota 00:00 UTC (2 tentativi, nessun 429; un `TimeoutError` a 300/306 assorbito dal resume).
-- `public/data/om-grid-seed.json` rigenerato con la nuova baseline: ΔT (recent − climatologia) **media +1,41 °C**, min −1,42 / max +6,90; Artico (lat≥60) +2,49 °C vs Tropici (|lat|≤20) +0,91 °C.
-- `node --test` 13/13; boot `node server.mjs` + `/api/health` OK. Verifica headless nel browser nelle 3 modalità **non ancora rifatta** con la metrica finale.
+- `public/data/om-grid-seed.json` rigenerato con la nuova baseline. `node --test` 13/13.
+- Merge `--no-ff` `metrica-mappa` → `master` (`cedeae2`), push. Deploy automatico Workers Builds (`buildOutcome: success`).
+- **KV `grid` ripulita e rigenerata**: `curl` di verifica lanciato prima della propagazione del deploy aveva riempito la KV (allora vuota) con un payload della metrica vecchia → `wrangler kv key delete grid --remote`, poi il worker nuovo l'ha rigenerata live.
+- Verifica prod: `/api/grid` → `periods.climatology` 1961-1990, `baseline.len` 306, `stale:false`, **ΔT media +1,41 °C** (min −1,44 / max +6,89). `/api/health` ok, `/api/era5` 200 (510 KB), label frontend nuove servite ("Anomalia: ultimi 12 mesi vs media 1961–1990"). Verifica headless nel browser nelle 3 modalità **non rifatta** (solo controlli via API/asset).
 
 ## Deploy Cloudflare (attivo)
 
@@ -80,5 +82,6 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - Griglia OM fissa (passo 10°×20°): si può valutare densità maggiore o zoom-dipendente
 - ERA5 va rigenerato periodicamente per restare aggiornato (`scripts/fetch_era5.py`, ora climatologia 1961-1990)
 - Climatologia OM (`om-climatology-1961-1990.json` + `om-climatology.js`): **completa, 306/306 punti reali Open-Meteo** (generata 2026-08-29 con `scripts/gen_om_climatology.mjs`, split a 3 decadi). ⚠️ `scripts/fetch_era5.py` (`write_om_climatology`) **sovrascrive ancora** questi due asset con una versione provvisoria campionata da ERA5: dopo un run di `fetch_era5.py`, rigenerare con `gen_om_climatology.mjs` oppure ripristinare i due file da git prima di committare
-- **Messa in produzione della nuova metrica mappa** (branch `metrica-mappa`, non ancora fatto): merge `--no-ff` su `master` → `npx wrangler deploy` → re-seed KV `grid` con `public/data/om-grid-seed.json` (già nella metrica nuova, togliere i flag `seed`/`stale`) → verifica prod
+- Verifica headless nel browser (Playwright, 3 modalità) della metrica mappa 1961-1990: fatta solo via API/asset, da rifare nel browser
+- **Mai lanciare `curl`/richieste a `enlil.bar971.workers.dev/api/grid` subito dopo un push su `master`**: se la KV `grid` è vuota e il deploy non è ancora propagato, il worker vecchio ripopola la KV con la metrica vecchia (TTL 12h). Aspettare che il deploy sia live, o `wrangler kv key delete grid --remote` dopo
 - Popup NOAA mostra solo l'ultimo anno: possibile estensione a serie storica della stazione
