@@ -31,6 +31,7 @@ const PUBLIC_DIR = path.join(ROOT, "public"); // statici condivisi col deploy Cl
 const CACHE_DIR = path.join(ROOT, "data", "cache");
 const ERA5_FILE = path.join(PUBLIC_DIR, "data", "era5-grid.json");
 const OM_SEED_FILE = path.join(PUBLIC_DIR, "data", "om-grid-seed.json"); // fallback finale griglia OM
+const OM_CLIMATOLOGY_FILE = path.join(PUBLIC_DIR, "data", "om-climatology-1961-1990.json");
 const GRID_CACHE_TTL_MS = 12 * 3600 * 1000;
 const SERIES_CACHE_TTL_MS = 24 * 3600 * 1000;
 
@@ -89,12 +90,17 @@ async function proxyCached(res, cacheName, ttlMs, url, contentType) {
 
 /* ---------------- Open-Meteo: griglia con snapshot ---------------- */
 
+// medie climatologiche 1961-1990 per punto (asset precalcolato)
+function loadClimatology() {
+  return JSON.parse(fs.readFileSync(OM_CLIMATOLOGY_FILE, "utf8")).mean;
+}
+
 async function handleGrid(res) {
   const file = path.join(CACHE_DIR, "grid.json");
   const fresh = readCache(file, GRID_CACHE_TTL_MS);
   if (fresh !== null) return sendJson(res, 200, JSON.parse(fresh));
   try {
-    const payload = await buildGridPayload();
+    const payload = await buildGridPayload(loadClimatology());
     fs.writeFileSync(file, JSON.stringify(payload));
     return sendJson(res, 200, payload);
   } catch (err) {

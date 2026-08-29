@@ -63,7 +63,7 @@ function updateLegend(sourceLabel) {
   legendDiv.innerHTML =
     '<div class="bar"></div>' +
     '<div class="legend-ticks"><span>0</span><span>+1</span><span>+2</span><span>≥ +3</span></div>' +
-    "ΔT ultimi 12 mesi vs 40 anni fa (°C)<br>" +
+    "Anomalia: ultimi 12 mesi vs media 1961–1990 (°C)<br>" +
     `<span class="legend-src">Fonte: ${sourceLabel}</span>`;
 }
 const legend = L.control({ position: "bottomright" });
@@ -207,20 +207,20 @@ function saveCache(key, data) {
   }
 }
 
-/* Ultimi 12 mesi completi (l'archivio ha ~5 giorni di ritardo) e la stessa
- * finestra di 40 anni prima, usata come baseline di confronto. */
+// Baseline climatologica fissa (WMO 1961-1990), stessa del grafico. Copia inline
+// di lib/core.mjs — tenerle allineate (test/sync.test.mjs).
+const CLIMATOLOGY = { start: "1961-01-01", end: "1990-12-31" };
+
+/* Ultimi 12 mesi completi (l'archivio ha ~5 giorni di ritardo) da confrontare
+ * con la climatologia 1961-1990. */
 function buildPeriods() {
   const end = new Date();
   end.setDate(end.getDate() - 7);
   const start = new Date(end);
   start.setFullYear(start.getFullYear() - 1);
-  const baseEnd = new Date(end);
-  baseEnd.setFullYear(baseEnd.getFullYear() - 40);
-  const baseStart = new Date(start);
-  baseStart.setFullYear(baseStart.getFullYear() - 40);
   return {
     recent: { start: fmtDate(start), end: fmtDate(end) },
-    baseline: { start: fmtDate(baseStart), end: fmtDate(baseEnd) },
+    climatology: { ...CLIMATOLOGY },
   };
 }
 
@@ -243,23 +243,23 @@ async function loadOpenMeteoLayer() {
       ? "snapshot backend (datato: quota Open-Meteo esaurita)"
       : "backend (cache condivisa)";
   } else {
-    // Modalità standalone: fetch diretto con cache in localStorage
+    // Modalità standalone: la climatologia 1961-1990 è precalcolata ed embedded
+    // in data/om-climatology.js; da Open-Meteo si scaricano solo gli ultimi 12 mesi.
     grid = buildGrid();
     periods = buildPeriods();
-    // v2: griglia passata da 323 a 306 punti (rimosso meridiano 180 duplicato);
-    // la vecchia cache aveva means indicizzati sulla griglia a 323 -> incompatibile
-    const cacheKey = `enlil-openmeteo|v2|${periods.recent.start}|${periods.recent.end}`;
+    baselineMeans = typeof OM_CLIMATOLOGY !== "undefined" ? OM_CLIMATOLOGY.mean : null;
+    if (!baselineMeans) throw new Error("Climatologia non disponibile (data/om-climatology.js mancante)");
+    // v3: metrica passata a anomalia vs climatologia 1961-1990 (i means recenti
+    // sono gli stessi, ma la cache v2 li abbinava a un'altra baseline)
+    const cacheKey = `enlil-openmeteo|v3|${periods.recent.start}|${periods.recent.end}`;
     const cached = loadCache(cacheKey);
     if (cached) {
       recentMeans = cached.recent;
-      baselineMeans = cached.baseline;
       source = "cache locale";
     } else {
-      setStatus("Scarico temperature recenti e baseline da Open-Meteo…");
-      // sequenziali (non parallele) per dimezzare il burst di chiamate
+      setStatus("Scarico le temperature degli ultimi 12 mesi da Open-Meteo…");
       recentMeans = await fetchGridMeans(grid, periods.recent, "periodo recente");
-      baselineMeans = await fetchGridMeans(grid, periods.baseline, "baseline");
-      saveCache(cacheKey, { recent: recentMeans, baseline: baselineMeans });
+      saveCache(cacheKey, { recent: recentMeans });
       source = "Open-Meteo (fetch diretto)";
     }
   }
@@ -288,10 +288,9 @@ async function loadOpenMeteoLayer() {
           `<div class="popup-row"><span class="lbl">Temperatura media degli ultimi 12 mesi<br>` +
           `(${periods.recent.start} → ${periods.recent.end})</span>` +
           `<span class="val">${r.toFixed(1)} °C</span></div>` +
-          `<div class="popup-row"><span class="lbl">Temperatura media dello stesso periodo, 40 anni fa<br>` +
-          `(${periods.baseline.start} → ${periods.baseline.end})</span>` +
+          `<div class="popup-row"><span class="lbl">Media climatologica 1961–1990</span>` +
           `<span class="val">${b.toFixed(1)} °C</span></div>` +
-          `<div class="popup-row"><span class="lbl">ΔT: di quanto si è scaldato questo punto in 40 anni</span>` +
+          `<div class="popup-row"><span class="lbl">Anomalia rispetto alla norma 1961–1990</span>` +
           `<span class="val">${delta >= 0 ? "+" : ""}${delta.toFixed(2)} °C</span></div>`
       )
       .addTo(markerLayer);
@@ -321,8 +320,8 @@ async function loadOpenMeteoLayer() {
 
   setStatus(
     `${valid} punti caricati (${source}). ` +
-      `Periodo recente: ${periods.recent.start} → ${periods.recent.end}; ` +
-      `baseline: ${periods.baseline.start} → ${periods.baseline.end}. Clicca un punto per i dettagli.`
+      `Ultimi 12 mesi: ${periods.recent.start} → ${periods.recent.end}; ` +
+      `climatologia: 1961–1990. Clicca un punto per i dettagli.`
   );
 }
 

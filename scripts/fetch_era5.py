@@ -25,8 +25,15 @@ import xarray as xr
 NC_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "public", "data")
 OUT_FILE = os.path.join(OUT_DIR, "era5-grid.json")
+OM_CLIM_JSON = os.path.join(OUT_DIR, "om-climatology-1961-1990.json")
+OM_CLIM_JS = os.path.join(OUT_DIR, "om-climatology.js")
 DATASET = "reanalysis-era5-single-levels-monthly-means"
 VARIABLE = "2m_temperature"
+
+# Baseline climatologica WMO. Se il download 30 anni è impraticabile, alzare
+# CLIM_START_YEAR a 1981 (10 anni) e annotarlo (climatologia ERA5 su 1981-1990).
+CLIM_START_YEAR = 1961
+CLIM_END_YEAR = 1990
 
 
 def year_month_range(end: date, months: int = 12):
@@ -38,6 +45,45 @@ def year_month_range(end: date, months: int = 12):
         out.append(cur.strftime("%Y-%m"))
         cur = (cur - timedelta(days=1)).replace(day=1)
     return sorted(out)
+
+
+def clim_months():
+    """Tutti i mesi "YYYY-MM" della finestra climatologica."""
+    return [f"{y}-{m:02d}" for y in range(CLIM_START_YEAR, CLIM_END_YEAR + 1) for m in range(1, 13)]
+
+
+def build_grid():
+    """Griglia della mappa (specchio di lib/core.mjs buildGrid): 306 punti."""
+    return [(lat, lon) for lat in range(-80, 81, 10) for lon in range(-180, 180, 20)]
+
+
+def write_om_climatology(base_clim):
+    """Campiona la climatologia ERA5 full-res sui 306 punti della griglia mappa e
+    scrive l'asset usato da server/worker/standalone (provvisorio finché non si
+    rigenera con scripts/gen_om_climatology.mjs da Open-Meteo)."""
+    grid = build_grid()
+    mean = []
+    for lat, lon in grid:
+        lon360 = lon if lon >= 0 else lon + 360
+        v = base_clim.sel(latitude=lat, longitude=lon360, method="nearest")
+        mean.append(round(float(v), 3))
+    obj = {
+        "period": {"start": f"{CLIM_START_YEAR}-01-01", "end": f"{CLIM_END_YEAR}-12-31"},
+        "generatedAt": date.today().isoformat(),
+        "source": "ERA5 single-levels monthly-means, campionata sulla griglia (provvisoria)",
+        "grid": [{"lat": lat, "lon": lon} for lat, lon in grid],
+        "mean": mean,
+    }
+    with open(OM_CLIM_JSON, "w") as f:
+        json.dump(obj, f)
+    with open(OM_CLIM_JS, "w") as f:
+        f.write(
+            "// Climatologia 1961-1990 per la griglia mappa (modalità standalone).\n"
+            f"// Provvisoria: campionata da ERA5 il {obj['generatedAt']}. "
+            "Rigenerare da Open-Meteo con scripts/gen_om_climatology.mjs.\n"
+            f"const OM_CLIMATOLOGY = {json.dumps(obj)};\n"
+        )
+    print(f"Scritto {OM_CLIM_JSON} e {OM_CLIM_JS}: {len(mean)} punti")
 
 
 def download(client, months, target):
@@ -71,8 +117,7 @@ def main():
     client = cdsapi.Client()
     end = date.today().replace(day=1) - timedelta(days=1)  # ultimo mese completo
     recent_months = year_month_range(end)
-    base_end = end.replace(year=end.year - 40)
-    baseline_months = year_month_range(base_end)
+    baseline_months = clim_months()  # 1961-1990, 360 mesi (~1 GB NetCDF, coda CDS)
 
     os.makedirs(OUT_DIR, exist_ok=True)
     os.makedirs(NC_DIR, exist_ok=True)
@@ -81,7 +126,10 @@ def main():
     download(client, recent_months, recent_nc)
     download(client, baseline_months, baseline_nc)
 
-    delta = mean_of(recent_nc, recent_months) - mean_of(baseline_nc, baseline_months)
+    base_clim = mean_of(baseline_nc, baseline_months)  # climatologia 1961-1990 full-res
+    write_om_climatology(base_clim)
+
+    delta = mean_of(recent_nc, recent_months) - base_clim
     # sottocampiona a ~2.5° per un JSON leggero. boundary="trim": la griglia
     # ERA5 (721 lat) non è multipla di 10, quindi l'ultima fascia a sud
     # (~-89.75°) viene scartata — irrilevante per la heatmap.
