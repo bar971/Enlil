@@ -3,12 +3,16 @@
 > Le Fasi 1–8 del piano di analisi precedente sono COMPLETATE e in produzione
 > (`master` @ `387797a`). Questo file ora descrive il follow-up §4.1.
 
-## STATO ESECUZIONE (agg. 2026-08-28 ~08:00 UTC — sospeso: budget Open-Meteo esaurito, riprendere dopo le 00:00 UTC)
+## STATO ESECUZIONE (agg. 2026-08-29 — climatologia 306/306 completa, branch pushato; resta solo la messa in produzione)
 
-Branch **`metrica-mappa`** su origin, **allineato a `origin/metrica-mappa`**.
-**NON mergiato su master, NON deployato.** Ultimo commit = checkpoint WIP
-(climatologia 264/306). I commit `41d8b5f`..`5110318` + `9cdb694` + i due
-checkpoint WIP restano la base.
+Branch **`metrica-mappa`** su origin. Climatologia Open-Meteo 1961-1990 **completa
+306/306 punti reali** (ultimi 42 via routine cloud dopo il reset quota 00:00 UTC del
+2026-08-29), `om-grid-seed.json` rigenerato con la nuova baseline, `node --test` 13/13,
+boot `server.mjs` + `/api/health` OK. Committato e pushato su `origin/metrica-mappa`.
+
+**NON ancora fatto:** verifica headless nel browser nelle 3 modalità con la metrica
+finale, merge `--no-ff` su `master`, `npx wrangler deploy`, re-seed KV `grid`, verifica
+prod. Vedi "PER CHIUDERE" (punti 6, 9-13). A prod completata: **eliminare questo file**.
 
 ### NOTA: `master` è avanzato (feature NON di questo piano)
 In questa sessione è stata sviluppata e **deployata in produzione** una feature
@@ -78,37 +82,28 @@ indipendente: nel popup della stazione NOAA ora compaiono "Giorno più caldo
   re-seed KV `grid`).
 - Fix script gen_om_climatology (decadi + pacing env): approvato.
 
-### PER CHIUDERE (riprendere quando Open-Meteo è di nuovo servibile)
-1. `git checkout metrica-mappa && git pull`  (su altro PC: serve anche
-   `Enlil/.env` da `../Enlil-secrets/.env` e `~/.cdsapirc` da
-   `../Enlil-secrets/cdsapirc` — v. sotto "Setup altro PC")
-2. **Riprendere la climatologia** (resume-safe, riparte da 264/306, ~3.300
-   chiamate → sta in un giorno). Footprint leggero, subito dopo un reset
-   00:00 UTC:
-   ```
-   OM_CLIM_CHUNK=6 OM_CLIM_DELAY_MS=30000 OM_CLIM_WINDOW_DELAY_MS=12000 \
-     node scripts/gen_om_climatology.mjs
-   ```
-   Rilanciare finché `mean.length === 306` (su 429: aspettare il reset). Al
-   termine lo script riscrive `om-climatology-1961-1990.json` (306) e
-   `om-climatology.js` (306, header pulito).
-3. Verifica valori: 306 medie plausibili (~ −55…+30 °C), **niente artefatti ai
-   poli** (confronto con ERA5).
-4. Rigenerare `public/data/om-grid-seed.json`: caricare il seed committato,
-   sostituire `.baseline` con `om-climatology-1961-1990.json` `.mean` (306
-   valori, stesso ordine di `buildGrid()`), lasciare invariato il resto
-   (`recent`, `grid`, `periods`, `fetchedAt`, `seed`). One-liner node.
-5. `node --test` (atteso 13/13).
-6. Verifica programmatica/headless nelle 3 modalità (`node server.mjs` +
-   `file://`): `/api/grid` con `periods.climatology`, ΔT media ~+1,2…+1,4,
-   popup "Media climatologica 1961–1990" / "Anomalia…", legenda "Anomalia:
-   ultimi 12 mesi vs media 1961–1990", niente blu spurio ai poli, 0 CSP.
-7. Commit finale sul branch: climatologia reale 306/306; togliere note
-   "PARZIALE"/"PROVVISORIO".
-8. Docs: `HANDOFF.md` (metrica mappa nuova, nuovi file, togliere §4.1 dai
-   "Debiti noti"), `README.md` (descrizione mappa). Poi **eliminare questo
-   file** `HANDOFF-metrica-mappa.md` (piano realizzato).
-9. `git checkout master && git merge --no-ff metrica-mappa && git push`
+### PER CHIUDERE
+1. ✅ FATTO — `git checkout metrica-mappa && git pull`.
+2. ✅ FATTO (2026-08-29) — climatologia completata a 306/306. Gli ultimi 42 punti
+   scaricati da una **routine cloud schedulata** subito dopo il reset quota 00:00 UTC
+   (`OM_CLIM_CHUNK=6 OM_CLIM_DELAY_MS=30000 OM_CLIM_WINDOW_DELAY_MS=12000`), 2
+   tentativi, nessun 429; splice dei 42 valori nuovi sui 264 già committati e rewrite
+   di `om-climatology.js` (header pulito).
+3. ✅ FATTO — 306 medie plausibili: min −53,3 / max +28,3 °C, media 6,63; poli senza
+   artefatti (polo S −53,3…−6,7 °C, polo N −26,6…+3,3 °C).
+4. ✅ FATTO — `public/data/om-grid-seed.json` rigenerato: `.baseline` ← climatologia
+   `.mean` (306), resto invariato.
+5. ✅ FATTO — `node --test` 13/13.
+6. **DA FARE** — Verifica programmatica/headless nelle 3 modalità (`node server.mjs` +
+   `file://`): `/api/grid` con `periods.climatology`, ΔT media ~+1,2…+1,4 (misurata sul
+   seed: **+1,41**), popup "Media climatologica 1961–1990" / "Anomalia…", legenda
+   "Anomalia: ultimi 12 mesi vs media 1961–1990", niente blu spurio ai poli, 0 CSP.
+   (Fatto solo boot `server.mjs` + `/api/health` OK.)
+7. ✅ FATTO — commit sul branch: climatologia reale 306/306, note "PARZIALE"/"PROVVISORIO"
+   rimosse.
+8. ✅ FATTO — Docs: `HANDOFF.md` + `README.md` aggiornati. Questo file va **eliminato**
+   a prod completata (punti 9-13).
+9. **DA FARE** — `git checkout master && git merge --no-ff metrica-mappa && git push`
    (mai `.env`).
 10. `npx wrangler deploy`.
 11. Re-seed KV `grid` con la nuova metrica:

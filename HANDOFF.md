@@ -1,6 +1,6 @@
 # HANDOFF — Enlil (clima globale su mappa mondiale)
 
-> Stato al 2026-08-27 (post migliorie UI/UX). Documento per riprendere il progetto su un'altra macchina o da un altro agente.
+> Stato al 2026-08-29 (climatologia OM 1961-1990 completa 306/306 su branch `metrica-mappa`). Documento per riprendere il progetto su un'altra macchina o da un altro agente.
 
 ## Cos'è
 
@@ -61,6 +61,11 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - **Verifica visiva con Playwright headless** (Chromium su http://localhost:8000): rendering mappa, selettore layer OM/ERA5, pannello grafico con 3 serie, vincoli zoom/pan (10 zoom-out forzati non spostano la vista), legenda fonte attiva. Così è stato trovato e corretto il bug delle longitudini ERA5 0..360.
 - Test Playwright non committati: erano in `/tmp/pwtest` (playwright-core + Chromium già presente in `%LOCALAPPDATA%/ms-playwright`).
 
+### Aggiornamento 2026-08-29 (branch `metrica-mappa`)
+- Climatologia Open-Meteo 1961-1990 completata a **306/306 punti reali** (min −53,3 / max +28,3 °C, media 6,63 °C). Ultimi 42 punti scaricati via routine cloud subito dopo il reset quota 00:00 UTC (2 tentativi, nessun 429; un `TimeoutError` a 300/306 assorbito dal resume).
+- `public/data/om-grid-seed.json` rigenerato con la nuova baseline: ΔT (recent − climatologia) **media +1,41 °C**, min −1,42 / max +6,90; Artico (lat≥60) +2,49 °C vs Tropici (|lat|≤20) +0,91 °C.
+- `node --test` 13/13; boot `node server.mjs` + `/api/health` OK. Verifica headless nel browser nelle 3 modalità **non ancora rifatta** con la metrica finale.
+
 ## Deploy Cloudflare (attivo)
 
 - URL: https://enlil.bar971.workers.dev — Worker `enlil` (`worker/index.js`), statici da `public/` (binding `ASSETS`, da dichiarare esplicitamente in `wrangler.jsonc` altrimenti `env.ASSETS` è undefined), cache KV `enlil-cache` id `076d8cde3bef436eabed421aa3e51546` (binding `ENLIL_CACHE`), secret `NOAA_TOKEN`.
@@ -74,5 +79,6 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - Dominio custom non configurato (resta su workers.dev)
 - Griglia OM fissa (passo 10°×20°): si può valutare densità maggiore o zoom-dipendente
 - ERA5 va rigenerato periodicamente per restare aggiornato (`scripts/fetch_era5.py`, ora climatologia 1961-1990)
-- Climatologia OM (`om-climatology-*.json`): temporaneamente **campionata da ERA5** da `fetch_era5.py` (bias ERA5-Land vs ERA5 a coste/montagne). Rigenerarla da Open-Meteo con `scripts/gen_om_climatology.mjs` quando la quota giornaliera è disponibile, poi ricommittare + `wrangler deploy` + re-seed KV `grid`
+- Climatologia OM (`om-climatology-1961-1990.json` + `om-climatology.js`): **completa, 306/306 punti reali Open-Meteo** (generata 2026-08-29 con `scripts/gen_om_climatology.mjs`, split a 3 decadi). ⚠️ `scripts/fetch_era5.py` (`write_om_climatology`) **sovrascrive ancora** questi due asset con una versione provvisoria campionata da ERA5: dopo un run di `fetch_era5.py`, rigenerare con `gen_om_climatology.mjs` oppure ripristinare i due file da git prima di committare
+- **Messa in produzione della nuova metrica mappa** (branch `metrica-mappa`, non ancora fatto): merge `--no-ff` su `master` → `npx wrangler deploy` → re-seed KV `grid` con `public/data/om-grid-seed.json` (già nella metrica nuova, togliere i flag `seed`/`stale`) → verifica prod
 - Popup NOAA mostra solo l'ultimo anno: possibile estensione a serie storica della stazione

@@ -56,10 +56,14 @@ Il repo GitHub è collegato a **Workers Builds**: ogni push su `master` triggera
 4. `pip install -r scripts/requirements.txt`, poi:
    ```bash
    python scripts/fetch_era5.py   # scarica 2 NetCDF (recent + climatologia 1961-1990),
-                                  # scrive data/era5-grid.json e la climatologia OM provvisoria
+                                  # scrive data/era5-grid.json
    ```
-   Il layer ERA5 compare in automatico al prossimo caricamento della pagina. La
-   climatologia Open-Meteo "vera" si rigenera con `node scripts/gen_om_climatology.mjs`.
+   Il layer ERA5 compare in automatico al prossimo caricamento della pagina.
+   ⚠️ `fetch_era5.py` **sovrascrive** anche `public/data/om-climatology-1961-1990.json`
+   e `om-climatology.js` con una climatologia OM provvisoria campionata da ERA5: quella
+   "vera" (306/306 punti reali Open-Meteo, già committata) si rigenera con
+   `node scripts/gen_om_climatology.mjs`. Dopo un run di `fetch_era5.py`, rigenerarla o
+   ripristinare i due file da git prima di committare.
 
 ## Note
 
