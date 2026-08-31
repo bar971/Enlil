@@ -10,11 +10,13 @@
  * HTTP, Cron Trigger e routing.
  */
 
-import { SERIES, fetchWithRetry, buildGridPayload, noaaStationData } from "../lib/core.mjs";
+import { SERIES, fetchWithRetry, buildGridPayload, noaaStationData, noaaStationHistory } from "../lib/core.mjs";
 
 const GRID_TTL_S = 12 * 3600;
 const SERIES_TTL_S = 24 * 3600;
 const NOAA_TTL_S = 7 * 24 * 3600;
+const NOAA_HISTORY_TTL_S = 30 * 24 * 3600;
+const NOAA_HISTORY_RATE_COST = 4; // ricerca stazione GSOM + tre decadi mensili
 
 // Cache HTTP all'edge/nel browser: risposte fresche cacheabili 5 min, poi
 // servibili "stale" per 1h mentre si rivalida. Per le risposte già stale si
@@ -147,6 +149,42 @@ async function handleNoaaStation(env, url, request, ctx) {
   });
 }
 
+async function handleNoaaHistory(env, url, request, ctx) {
+  if (!env.NOAA_TOKEN) {
+    return json({ error: "NOAA_TOKEN non configurato sul Worker (wrangler secret put NOAA_TOKEN)." }, 501);
+  }
+  const lat = Number(url.searchParams.get("lat"));
+  const lon = Number(url.searchParams.get("lon"));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return json({ error: "Parametri lat/lon mancanti o non validi" }, 400);
+  }
+  const ip = request.headers.get("CF-Connecting-IP") || "?";
+  const rlKey = `noaa-rl:${ip}:${Math.floor(Date.now() / 60000)}`;
+  const rlCount = Number(await env.ENLIL_CACHE.get(rlKey)) || 0;
+  if (rlCount + NOAA_HISTORY_RATE_COST > 30) {
+    return json({ error: "Troppe richieste NOAA in un minuto, riprova a breve." }, 429, { "Cache-Control": NO_STORE });
+  }
+  ctx.waitUntil(env.ENLIL_CACHE.put(rlKey, String(rlCount + NOAA_HISTORY_RATE_COST), { expirationTtl: 120 }));
+  const cacheKey = `noaa-history:${lat.toFixed(1)}:${lon.toFixed(1)}`;
+  const cached = await env.ENLIL_CACHE.getWithMetadata(cacheKey);
+  if (cached.value !== null && cached.metadata?.ts && Date.now() / 1000 - cached.metadata.ts < NOAA_HISTORY_TTL_S) {
+    return new Response(cached.value, {
+      status: cached.metadata.status || 200,
+      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": NO_STORE, "X-Enlil-Cache": "kv" },
+    });
+  }
+  const { status, body } = await noaaStationHistory(env.NOAA_TOKEN, lat, lon);
+  const bodyStr = JSON.stringify(body);
+  if (status === 200 || status === 404) {
+    ctx.waitUntil(env.ENLIL_CACHE.put(cacheKey, bodyStr, {
+      metadata: { ts: Math.floor(Date.now() / 1000), status }, expirationTtl: NOAA_HISTORY_TTL_S,
+    }));
+  }
+  return new Response(bodyStr, {
+    status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": NO_STORE },
+  });
+}
+
 /* ---------------- Cron: pre-scalda la KV ---------------- */
 /* Gli egress di Cloudflare sono IP condivisi: a KV fredda il primo
  * visitatore paga tutti i retry 429 di Open-Meteo (o fallisce). Un Cron
@@ -203,6 +241,8 @@ export default {
           return await proxyCached(env, "berkeley", SERIES_TTL_S, SERIES.berkeley, ctx);
         case "/api/noaa/station-data":
           return await handleNoaaStation(env, url, request, ctx);
+        case "/api/noaa/station-history":
+          return await handleNoaaHistory(env, url, request, ctx);
         case "/api/era5":
           return env.ASSETS.fetch(new URL("/data/era5-grid.json", url.origin));
         default:

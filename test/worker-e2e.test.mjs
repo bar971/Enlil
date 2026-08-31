@@ -131,3 +131,27 @@ test("Worker e2e: NOAA applica rate limit e serve la risposta dalla KV", async (
   const rateKey = `noaa-rl:192.0.2.1:${Math.floor(NOW / 60000)}`;
   assert.equal(await h.env.ENLIL_CACHE.get(rateKey), "1");
 });
+
+test("Worker e2e: storico NOAA lazy viene servito dalla KV per 30 giorni", async (t) => {
+  t.mock.method(Date, "now", () => NOW);
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("NOAA upstream non atteso");
+  });
+  const body = { station: { id: "GSOM", name: "Storica", distanceKm: 1 }, annual: [{ year: 2025, tavg: 12, months: 12 }] };
+  const h = harness({
+    "noaa-history:45.0:9.0": { value: JSON.stringify(body), metadata: { ts: FRESH_TS, status: 200 } },
+  });
+  const request = new Request("https://enlil.test/api/noaa/station-history?lat=45&lon=9", {
+    headers: { "CF-Connecting-IP": "192.0.2.2" },
+  });
+
+  const response = await worker.fetch(request, h.env, h.ctx);
+  await h.drain();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("X-Enlil-Cache"), "kv");
+  assert.deepEqual(await response.json(), body);
+  assert.equal(fetchMock.mock.callCount(), 0);
+  const rateKey = `noaa-rl:192.0.2.2:${Math.floor(NOW / 60000)}`;
+  assert.equal(await h.env.ENLIL_CACHE.get(rateKey), "4");
+});

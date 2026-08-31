@@ -40,6 +40,24 @@ main {
 
 .status.error { color: #ff8a80; }
 
+.noaa-history-btn {
+  margin-top: 0.55rem;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  padding: 0.28rem 0.5rem;
+  background: #1e293b;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.noaa-history-btn:disabled { cursor: progress; opacity: 0.7; }
+
+.noaa-history { margin-top: 0.45rem; max-width: 270px; }
+.noaa-history-title { font-weight: 600; margin-bottom: 0.1rem; }
+.noaa-history-chart { display: block; width: 100%; height: auto; }
+.noaa-history-chart line { stroke: #64748b; stroke-width: 1; }
+.noaa-history-chart polyline { fill: none; stroke: #fb923c; stroke-width: 2; }
+
 #chart-section h2 {
   margin: 0 0 0.75rem;
   font-size: 1rem;

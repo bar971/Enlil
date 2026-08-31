@@ -21,6 +21,7 @@ import {
   fetchWithRetry,
   buildGridPayload,
   noaaStationData,
+  noaaStationHistory,
 } from "./lib/core.mjs";
 import { cachedFile, readCache, readStale } from "./lib/file-cache.mjs";
 
@@ -116,6 +117,16 @@ async function handleNoaaStation(res, url) {
   return sendJson(res, status, body);
 }
 
+async function handleNoaaHistory(res, url) {
+  if (!NOAA_TOKEN) {
+    return sendJson(res, 501, { error: "NOAA_TOKEN non configurato." });
+  }
+  const lat = Number(url.searchParams.get("lat"));
+  const lon = Number(url.searchParams.get("lon"));
+  const { status, body } = await noaaStationHistory(NOAA_TOKEN, lat, lon);
+  return sendJson(res, status, body);
+}
+
 /* ---------------- ERA5: serve il JSON prodotto da scripts/fetch_era5.py ---------------- */
 
 function handleEra5(res) {
@@ -186,6 +197,8 @@ const server = http.createServer(async (req, res) => {
         return await proxyCached(res, "berkeley.txt", SERIES_CACHE_TTL_MS, SERIES.berkeley, "text/plain; charset=utf-8");
       case "/api/noaa/station-data":
         return await handleNoaaStation(res, url);
+      case "/api/noaa/station-history":
+        return await handleNoaaHistory(res, url);
       case "/api/era5":
         return handleEra5(res);
       default:

@@ -1,6 +1,6 @@
 # HANDOFF — Enlil (clima globale su mappa mondiale)
 
-> Stato al 2026-08-31 (`master`; climatologia OM 1961-1990 completa 306/306, protezione asset e test NOAA integrati). Documento per riprendere il progetto su un'altra macchina o da un altro agente.
+> Stato al 2026-08-31 (`master`; climatologia OM 1961-1990 completa 306/306, protezione asset, test NOAA e storico GSOM nel popup integrati). Documento per riprendere il progetto su un'altra macchina o da un altro agente.
 
 ## Cos'è
 
@@ -33,7 +33,7 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 | NASA GISTEMP | No | `/api/gistemp` proxy CSV, cache 24h | ✓ live |
 | HadCRUT5 | No | `/api/hadcrut5` proxy CSV mensile → aggregato annuale nel frontend | ✓ live |
 | Berkeley Earth | No | `/api/berkeley` proxy TXT annuale | ✓ live |
-| NOAA CDO (stazioni GHCND) | Token | `/api/noaa/station-data?lat&lon`: stazione attiva più vicina + TAVG/TMAX/TMIN ultimi 12 mesi disponibili | ✓ live |
+| NOAA CDO (GHCND + GSOM) | Token | `/api/noaa/station-data?lat&lon`: riepilogo ultimo anno; `/api/noaa/station-history?lat&lon`: TAVG annuale GSOM su 30 anni, lazy dal popup | ✓ live |
 | ERA5 (CDS) | Token | `/api/era5` serve `data/era5-grid.json` (layer heatmap 10.368 punti) | ✓ live |
 
 ## Setup su un nuovo PC
@@ -104,6 +104,13 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - Una griglia zoom-dipendente frammenterebbe cache e climatologia e aumenterebbe il rischio di `429`; una griglia 5°×5° consumerebbe circa 9.504 location/giorno con il cron ogni 6 ore.
 - Il caso d'uso ad alta densità è già coperto dal layer ERA5 precomputato da 10.368 punti.
 
+### Aggiornamento 2026-08-31 — storico NOAA nel popup
+
+- Il popup mantiene il riepilogo GHCND dell'ultimo anno e aggiunge il pulsante lazy “Mostra storico 30 anni”.
+- Lo storico usa GSOM mensile: seleziona una stazione vicina con almeno 30 anni di copertura, esegue al massimo tre richieste da 10 anni e restituisce TAVG annuale; anni con meno di 10 mesi sono esclusi.
+- Il Worker conserva le risposte GSOM in KV per 30 giorni, con chiave per cella 0,1°; il frontend mostra un grafico SVG compatto, senza dipendenze aggiuntive.
+- Verifiche: `node --test` **33/33** e bundle Wrangler completato con successo.
+
 ## Deploy Cloudflare (attivo)
 
 - URL: https://enlil.bar971.workers.dev — Worker `enlil` (`worker/index.js`), statici da `public/` (binding `ASSETS`, da dichiarare esplicitamente in `wrangler.jsonc` altrimenti `env.ASSETS` è undefined), cache KV `enlil-cache` id `076d8cde3bef436eabed421aa3e51546` (binding `ENLIL_CACHE`), secret `NOAA_TOKEN`.
@@ -116,4 +123,3 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - Test: `node --test` (parser serie, sync app.js↔lib, protezione asset climatologici, logica NOAA, cache file/KV e Worker end-to-end); CI in `.github/workflows/ci.yml`.
 - ERA5 va rigenerato quando cambia l'ultimo mese completo disponibile (`scripts/fetch_era5.py`; la baseline 1961-1990 viene riutilizzata)
 - **Mai lanciare `curl`/richieste a `enlil.bar971.workers.dev/api/grid` subito dopo un push su `master`**: se la KV `grid` è vuota e il deploy non è ancora propagato, il worker vecchio ripopola la KV con la metrica vecchia (TTL 12h). Aspettare che il deploy sia live, o `wrangler kv key delete grid --remote` dopo
-- Popup NOAA mostra solo l'ultimo anno: possibile estensione a serie storica della stazione

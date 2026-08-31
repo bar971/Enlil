@@ -350,6 +350,49 @@ async function loadEra5Layer() {
 
 /* NOAA CDO (clima.md §2): click sulla mappa (fuori dai marker) → dati della
  * stazione GHCND più vicina. Attivo solo con backend + NOAA_TOKEN. */
+function noaaHistorySvg(annual) {
+  if (!annual.length) return "Storico non disponibile.";
+  const width = 270, height = 92, padX = 5, padY = 12;
+  const values = annual.map((point) => point.tavg);
+  const low = Math.min(...values), high = Math.max(...values);
+  const span = Math.max(high - low, 0.5);
+  const points = annual.map((point, index) => {
+    const x = padX + (annual.length === 1 ? 0 : index * (width - 2 * padX) / (annual.length - 1));
+    const y = height - padY - (point.tavg - low) * (height - 2 * padY) / span;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const partial = annual.filter((point) => point.months < 12).length;
+  return `<div class="noaa-history-title">TAVG annuale (${annual[0].year}–${annual.at(-1).year})</div>` +
+    `<svg class="noaa-history-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Storico temperatura media annuale NOAA">` +
+    `<line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}"/>` +
+    `<polyline points="${points}"/></svg>` +
+    `<small>${annual[0].year}: ${annual[0].tavg.toFixed(1)} °C · ${annual.at(-1).year}: ${annual.at(-1).tavg.toFixed(1)} °C` +
+    (partial ? ` · ${partial} anno/i con 10–11 mesi` : "") + "</small>";
+}
+
+function attachNoaaHistory(popup, lat, lon) {
+  const root = popup.getElement();
+  const button = root?.querySelector("[data-noaa-history]");
+  const target = root?.querySelector("[data-noaa-history-result]");
+  if (!button || !target) return;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    button.textContent = "Carico storico…";
+    target.textContent = "Interrogo NOAA GSOM…";
+    try {
+      const res = await fetch(`/api/noaa/station-history?lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      target.innerHTML = noaaHistorySvg(data.annual);
+      button.remove();
+    } catch (err) {
+      target.textContent = `Storico NOAA: ${err.message}`;
+      button.disabled = false;
+      button.textContent = "Riprova storico 30 anni";
+    }
+  });
+}
+
 map.on("click", async (e) => {
   if (backend === null || !backend.noaa) return;
   const popup = L.popup()
@@ -376,8 +419,11 @@ map.on("click", async (e) => {
         `${data.station.name} <small>(${data.station.id})</small><br>` +
         `Media ultimo anno (${data.period.start} → ${data.period.end}):<br>` +
         `TAVG: <b>${fmtVal(data.tavg)}</b> · TMAX: ${fmtVal(data.tmax)} · TMIN: ${fmtVal(data.tmin)}` +
-        estremi
+        estremi +
+        `<br><button type="button" class="noaa-history-btn" data-noaa-history>Mostra storico 30 anni</button>` +
+        `<div class="noaa-history" data-noaa-history-result></div>`
     );
+    attachNoaaHistory(popup, e.latlng.lat, e.latlng.lng);
   } catch (err) {
     popup.setContent(`NOAA CDO: ${err.message}`);
   }

@@ -25,6 +25,7 @@ Nessuna dipendenza npm: il backend locale è Node puro (`node:http`), il Worker 
 - `GET /api/grid` — griglia Open-Meteo; snapshot in `data/cache/grid.json` (TTL 12h; se Open-Meteo è in 429 serve lo snapshot datato)
 - `GET /api/gistemp` · `/api/hadcrut5` · `/api/berkeley` — proxy con cache 24h in `data/cache/`
 - `GET /api/noaa/station-data?lat=..&lon=..` — stazione GHCND più vicina + medie TAVG/TMAX/TMIN ultimo anno
+- `GET /api/noaa/station-history?lat=..&lon=..` — storico annuale TAVG di 30 anni dalla stazione GSOM più vicina con copertura sufficiente; richiesto lazy dal popup
 - `GET /api/era5` — serve `data/era5-grid.json` (501 finché non generato)
 
 ## Autenticazione richiesta (solo 2 fonti)
@@ -80,6 +81,6 @@ npx --yes wrangler@4 deploy --dry-run
 ```
 
 La suite copre parser delle serie, sincronizzazione frontend↔librerie condivise,
-protezione degli asset climatologici, logica NOAA, cache su file/KV (hit, refresh,
-fallback stale e miss) ed entrypoint Worker end-to-end con binding simulati.
+protezione degli asset climatologici, NOAA giornaliero e GSOM storico, cache su file/KV
+(hit, refresh, fallback stale e miss) ed entrypoint Worker end-to-end con binding simulati.
 - Fonti senza auth (NASA GISTEMP, HadCRUT5, Berkeley Earth, Open-Meteo) funzionano subito.

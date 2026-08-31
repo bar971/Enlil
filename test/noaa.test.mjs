@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { noaaStationData } from "../lib/core.mjs";
+import { noaaStationData, noaaStationHistory } from "../lib/core.mjs";
 
 const FIXED_NOW = Date.parse("2026-08-31T12:00:00Z");
 
@@ -102,4 +102,39 @@ test("NOAA: pagina oltre 1000 record e lascia null i tipi mancanti", async (t) =
   assert.equal(body.tmin, null);
   assert.equal(body.warmestDay, null);
   assert.equal(body.coldestDay, null);
+});
+
+test("NOAA GSOM: costruisce uno storico annuale di 30 anni ed esclude anni incompleti", async (t) => {
+  t.mock.method(Date, "now", () => FIXED_NOW);
+  const ranges = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (url.includes("/stations?")) {
+      return jsonResponse({ results: [
+        { id: "GSOM", name: "Storica", latitude: 45.01, longitude: 9.01, mindate: "1950-01-01", maxdate: "2026-08-15" },
+      ] });
+    }
+    const params = new URL(url).searchParams;
+    const from = Number(params.get("startdate").slice(0, 4));
+    const to = Number(params.get("enddate").slice(0, 4));
+    ranges.push([from, to]);
+    const results = [];
+    for (let year = from; year <= to; year++) {
+      const maxMonth = year === 1997 ? 9 : 12;
+      for (let month = 1; month <= maxMonth; month++) {
+        results.push({ datatype: "TAVG", date: `${year}-${String(month).padStart(2, "0")}-01T00:00:00`, value: year - 1900 });
+      }
+    }
+    return jsonResponse({ results });
+  });
+
+  const { status, body } = await noaaStationHistory("token", 45, 9);
+
+  assert.equal(status, 200);
+  assert.deepEqual(ranges, [[1996, 2005], [2006, 2015], [2016, 2025]]);
+  assert.deepEqual(body.period, { start: "1996-01-01", end: "2025-12-31" });
+  assert.equal(body.station.id, "GSOM");
+  assert.equal(body.annual.length, 29);
+  assert.deepEqual(body.annual[0], { year: 1996, tavg: 96, months: 12 });
+  assert.ok(!body.annual.some((year) => year.year === 1997));
+  assert.deepEqual(body.annual.at(-1), { year: 2025, tavg: 125, months: 12 });
 });
