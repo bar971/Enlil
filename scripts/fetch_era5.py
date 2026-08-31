@@ -15,9 +15,10 @@ dove anomaly = media 2m-temperature degli ultimi 12 mesi meno la media dello
 stesso periodo di 40 anni prima (stessa metrica del layer Open-Meteo).
 """
 
+import argparse
 import json
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import cdsapi
 import xarray as xr
@@ -25,6 +26,7 @@ import xarray as xr
 NC_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "public", "data")
 OUT_FILE = os.path.join(OUT_DIR, "era5-grid.json")
+META_FILE = os.path.join(OUT_DIR, "era5-grid.meta.json")
 DATASET = "reanalysis-era5-single-levels-monthly-means"
 VARIABLE = "2m_temperature"
 
@@ -51,8 +53,10 @@ def clim_months():
 
 
 def download(client, months, target):
+    """Scarica su .part e sostituisce il NetCDF valido solo a download concluso."""
     years = sorted({m[:4] for m in months})
-    print(f"Download ERA5 {years} -> {target}")
+    partial = target + ".part"
+    print(f"Download ERA5 {years} -> {partial}")
     client.retrieve(
         DATASET,
         {
@@ -64,8 +68,37 @@ def download(client, months, target):
             "data_format": "netcdf",
             "download_format": "unarchived",
         },
-        target,
+        partial,
     )
+    os.replace(partial, target)
+
+
+def available_months(nc_file):
+    """Insieme dei mesi YYYY-MM presenti nel NetCDF, senza caricare i dati in RAM."""
+    with xr.open_dataset(nc_file) as ds:
+        tcoord = "valid_time" if "valid_time" in ds.coords else "time"
+        return set(ds[tcoord].dt.strftime("%Y-%m").values.tolist())
+
+
+def ensure_baseline(client, months, target, refresh=False):
+    """Riusa la baseline completa; la scarica se assente o forzata.
+
+    Una copia esistente ma incompleta non viene sovrascritta implicitamente:
+    richiede --refresh-baseline, così un'anomalia è visibile all'operatore.
+    """
+    if refresh or not os.path.exists(target):
+        download(client, months, target)
+        return
+    expected = set(months)
+    present = available_months(target)
+    missing = sorted(expected - present)
+    if missing:
+        preview = ", ".join(missing[:6]) + ("…" if len(missing) > 6 else "")
+        raise RuntimeError(
+            f"Baseline ERA5 incompleta ({len(missing)} mesi mancanti: {preview}). "
+            "Rilancia con --refresh-baseline."
+        )
+    print(f"Riutilizzo baseline ERA5 completa: {target} ({len(expected)} mesi)")
 
 
 def mean_of(nc_file, months):
@@ -77,8 +110,23 @@ def mean_of(nc_file, months):
     return t2m.mean(dim=tcoord)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Rigenera il layer ERA5 di Enlil")
+    parser.add_argument(
+        "--refresh-baseline",
+        action="store_true",
+        help="riscarica anche la climatologia immutabile 1961-1990",
+    )
+    parser.add_argument(
+        "--validate-baseline",
+        action="store_true",
+        help="verifica i 360 mesi della baseline locale senza scaricare dati",
+    )
+    return parser.parse_args()
+
+
 def main():
-    client = cdsapi.Client()
+    args = parse_args()
     end = date.today().replace(day=1) - timedelta(days=1)  # ultimo mese completo
     recent_months = year_month_range(end)
     baseline_months = clim_months()  # 1961-1990, 360 mesi (~1 GB NetCDF, coda CDS)
@@ -87,8 +135,18 @@ def main():
     os.makedirs(NC_DIR, exist_ok=True)
     recent_nc = os.path.join(NC_DIR, "era5-recent.nc")
     baseline_nc = os.path.join(NC_DIR, "era5-baseline.nc")
+    if args.validate_baseline:
+        if not os.path.exists(baseline_nc):
+            raise RuntimeError(f"Baseline ERA5 assente: {baseline_nc}")
+        missing = sorted(set(baseline_months) - available_months(baseline_nc))
+        if missing:
+            raise RuntimeError(f"Baseline ERA5 incompleta: {len(missing)} mesi mancanti")
+        print(f"Baseline ERA5 valida: {baseline_nc} ({len(baseline_months)} mesi)")
+        return
+
+    client = cdsapi.Client()
+    ensure_baseline(client, baseline_months, baseline_nc, args.refresh_baseline)
     download(client, recent_months, recent_nc)
-    download(client, baseline_months, baseline_nc)
 
     base_clim = mean_of(baseline_nc, baseline_months)  # climatologia 1961-1990 full-res
 
@@ -106,6 +164,21 @@ def main():
     with open(OUT_FILE, "w") as f:
         json.dump(records, f)
     print(f"Scritto {OUT_FILE}: {len(records)} punti")
+    metadata = {
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "source": "ERA5 single-levels monthly-means",
+        "recent": {"start": recent_months[0], "end": recent_months[-1], "months": len(recent_months)},
+        "climatology": {
+            "start": baseline_months[0],
+            "end": baseline_months[-1],
+            "months": len(baseline_months),
+        },
+        "records": len(records),
+    }
+    with open(META_FILE, "w") as f:
+        json.dump(metadata, f, indent=2)
+        f.write("\n")
+    print(f"Scritto {META_FILE}")
 
 
 if __name__ == "__main__":

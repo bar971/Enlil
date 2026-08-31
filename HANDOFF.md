@@ -19,7 +19,7 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 | `data/gistemp.js` | Snapshot NASA GISTEMP embedded (fallback senza backend) |
 | `public/data/era5-grid.json` | Griglia ERA5 precomputata (10.368 punti, ~500 KB) — generata da script |
 | `data/cache/` | Cache runtime del backend (gitignored): grid.json, gistemp.csv, hadcrut5.csv, berkeley.txt |
-| `scripts/fetch_era5.py` | Genera `public/data/era5-grid.json` dal CDS (richiede token); non modifica la climatologia Open-Meteo |
+| `scripts/fetch_era5.py` | Genera `public/data/era5-grid.json` e relativo sidecar `.meta.json` dal CDS (richiede token); riusa la baseline ERA5 e non modifica la climatologia Open-Meteo |
 | `clima.md` | Documento fonte sui dataset |
 | `.env` | `NOAA_TOKEN=...` (gitignored, vive nel repo secrets) |
 | `scripts/gen_om_climatology.mjs` | Genera la climatologia Open-Meteo 1961-1990 sui 306 punti (asset precalcolato, resume-safe) |
@@ -90,6 +90,20 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - Coperti routing e risposte complete per health/provider, asset statici, ERA5, griglia fresca da KV e NOAA da cache con rate limit.
 - Verifiche: `node --test` **30/30** e bundle Wrangler completato con successo.
 
+### Aggiornamento 2026-08-31 — rigenerazione ERA5 incrementale
+
+- La baseline ERA5 1961-1990 (360 mesi, ~490 MB) viene validata e riutilizzata; al primo setup viene scaricata automaticamente.
+- `--refresh-baseline` forza esplicitamente il download climatologico. Una baseline presente ma incompleta causa un errore leggibile anziché essere sovrascritta in silenzio.
+- `--validate-baseline` controlla offline che il NetCDF locale contenga tutti i 360 mesi attesi.
+- I download recent e baseline usano un file `.part` e sostituzione atomica, preservando l'ultima copia valida in caso di errore CDS.
+- `era5-grid.json` resta un array compatibile con frontend/API; periodo, generazione e numero record vengono scritti nel sidecar `era5-grid.meta.json`.
+
+### Decisione 2026-08-31 — densità griglia Open-Meteo
+
+- Confermata la griglia fissa da 306 punti (10° lat × 20° lon): è il compromesso corretto tra resa già verificata, marker cliccabili e quota Open-Meteo.
+- Una griglia zoom-dipendente frammenterebbe cache e climatologia e aumenterebbe il rischio di `429`; una griglia 5°×5° consumerebbe circa 9.504 location/giorno con il cron ogni 6 ore.
+- Il caso d'uso ad alta densità è già coperto dal layer ERA5 precomputato da 10.368 punti.
+
 ## Deploy Cloudflare (attivo)
 
 - URL: https://enlil.bar971.workers.dev — Worker `enlil` (`worker/index.js`), statici da `public/` (binding `ASSETS`, da dichiarare esplicitamente in `wrangler.jsonc` altrimenti `env.ASSETS` è undefined), cache KV `enlil-cache` id `076d8cde3bef436eabed421aa3e51546` (binding `ENLIL_CACHE`), secret `NOAA_TOKEN`.
@@ -100,7 +114,6 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 ## Debiti noti / prossimi passi
 
 - Test: `node --test` (parser serie, sync app.js↔lib, protezione asset climatologici, logica NOAA, cache file/KV e Worker end-to-end); CI in `.github/workflows/ci.yml`.
-- Griglia OM fissa (passo 10°×20°): si può valutare densità maggiore o zoom-dipendente
-- ERA5 va rigenerato periodicamente per restare aggiornato (`scripts/fetch_era5.py`, ora climatologia 1961-1990)
+- ERA5 va rigenerato quando cambia l'ultimo mese completo disponibile (`scripts/fetch_era5.py`; la baseline 1961-1990 viene riutilizzata)
 - **Mai lanciare `curl`/richieste a `enlil.bar971.workers.dev/api/grid` subito dopo un push su `master`**: se la KV `grid` è vuota e il deploy non è ancora propagato, il worker vecchio ripopola la KV con la metrica vecchia (TTL 12h). Aspettare che il deploy sia live, o `wrangler kv key delete grid --remote` dopo
 - Popup NOAA mostra solo l'ultimo anno: possibile estensione a serie storica della stazione

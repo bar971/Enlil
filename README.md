@@ -55,13 +55,17 @@ Il repo GitHub è collegato a **Workers Builds**: ogni push su `master` triggera
 3. Accettare la licenza del dataset: apri [la pagina del dataset](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels-monthly-means?tab=download) loggato, scorri in fondo ("Terms of use") e clicca Accept
 4. `pip install -r scripts/requirements.txt`, poi:
    ```bash
-   python scripts/fetch_era5.py   # scarica 2 NetCDF (recent + climatologia 1961-1990),
-                                  # scrive data/era5-grid.json
+   python scripts/fetch_era5.py   # aggiorna il NetCDF recente, riusa la baseline 1961-1990,
+                                  # scrive era5-grid.json + era5-grid.meta.json
    ```
    Il layer ERA5 compare in automatico al prossimo caricamento della pagina.
-   `fetch_era5.py` aggiorna esclusivamente `public/data/era5-grid.json`: la climatologia
-   Open-Meteo resta separata e si rigenera, solo quando necessario, con
+   `fetch_era5.py` aggiorna esclusivamente i file ERA5 `public/data/era5-grid.json` e
+   `era5-grid.meta.json`: la climatologia Open-Meteo resta separata e si rigenera, solo quando necessario, con
    `node scripts/gen_om_climatology.mjs`.
+   Al primo utilizzo viene scaricata anche la baseline ERA5; in seguito viene validata e
+   riutilizzata. Per riscaricarla intenzionalmente: `python scripts/fetch_era5.py --refresh-baseline`.
+   Per controllarla senza download: `python scripts/fetch_era5.py --validate-baseline`.
+   I download passano da file `.part`, quindi un errore non sostituisce l'ultima copia valida.
 
 ## Note
 
