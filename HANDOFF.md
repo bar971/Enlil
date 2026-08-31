@@ -1,6 +1,6 @@
 # HANDOFF — Enlil (clima globale su mappa mondiale)
 
-> Stato al 2026-08-29 (climatologia OM 1961-1990 completa 306/306 su branch `metrica-mappa`). Documento per riprendere il progetto su un'altra macchina o da un altro agente.
+> Stato al 2026-08-31 (`master`; climatologia OM 1961-1990 completa 306/306, protezione asset e test NOAA integrati). Documento per riprendere il progetto su un'altra macchina o da un altro agente.
 
 ## Cos'è
 
@@ -16,9 +16,9 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 | `lib/core.mjs` | Logica condivisa server↔worker: griglia, periodi, fetch/retry, Open-Meteo, NOAA (solo API standard, niente `node:`) |
 | `lib/series.mjs` | Parser canonici delle serie storiche (fonte per i test; `app.js` ne tiene una copia inline) |
 | `data/gistemp.js` | Snapshot NASA GISTEMP embedded (fallback senza backend) |
-| `data/era5-grid.json` | Griglia ERA5 precomputata (10.368 punti, ~500 KB) — generata da script |
+| `public/data/era5-grid.json` | Griglia ERA5 precomputata (10.368 punti, ~500 KB) — generata da script |
 | `data/cache/` | Cache runtime del backend (gitignored): grid.json, gistemp.csv, hadcrut5.csv, berkeley.txt |
-| `scripts/fetch_era5.py` | Genera `data/era5-grid.json` dal CDS (richiede token) |
+| `scripts/fetch_era5.py` | Genera `public/data/era5-grid.json` dal CDS (richiede token); non modifica la climatologia Open-Meteo |
 | `clima.md` | Documento fonte sui dataset |
 | `.env` | `NOAA_TOKEN=...` (gitignored, vive nel repo secrets) |
 | `scripts/gen_om_climatology.mjs` | Genera la climatologia Open-Meteo 1961-1990 sui 306 punti (asset precalcolato, resume-safe) |
@@ -62,11 +62,20 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - Test Playwright non committati: erano in `/tmp/pwtest` (playwright-core + Chromium già presente in `%LOCALAPPDATA%/ms-playwright`).
 
 ### Aggiornamento 2026-08-29 — metrica mappa 1961-1990 IN PRODUZIONE
+
 - Climatologia Open-Meteo 1961-1990 completata a **306/306 punti reali** (min −53,3 / max +28,3 °C, media 6,63 °C). Ultimi 42 punti scaricati via routine cloud subito dopo il reset quota 00:00 UTC (2 tentativi, nessun 429; un `TimeoutError` a 300/306 assorbito dal resume).
 - `public/data/om-grid-seed.json` rigenerato con la nuova baseline. `node --test` 13/13.
 - Merge `--no-ff` `metrica-mappa` → `master` (`cedeae2`), push. Deploy automatico Workers Builds (`buildOutcome: success`).
 - **KV `grid` ripulita e rigenerata**: `curl` di verifica lanciato prima della propagazione del deploy aveva riempito la KV (allora vuota) con un payload della metrica vecchia → `wrangler kv key delete grid --remote`, poi il worker nuovo l'ha rigenerata live.
-- Verifica prod: `/api/grid` → `periods.climatology` 1961-1990, `baseline.len` 306, `stale:false`, **ΔT media +1,41 °C** (min −1,44 / max +6,89). `/api/health` ok, `/api/era5` 200 (510 KB), label frontend nuove servite ("Anomalia: ultimi 12 mesi vs media 1961–1990"). Verifica headless nel browser nelle 3 modalità **non rifatta** (solo controlli via API/asset).
+- Verifica prod: `/api/grid` → `periods.climatology` 1961-1990, `baseline.len` 306, `stale:false`, **ΔT media +1,41 °C** (min −1,44 / max +6,89). `/api/health` ok, `/api/era5` 200 (510 KB), label frontend nuove servite ("Anomalia: ultimi 12 mesi vs media 1961–1990"). Verifica headless nel browser nelle 3 modalità completata con esito positivo.
+
+### Aggiornamento 2026-08-31 — protezione climatologia e test NOAA
+
+- `scripts/fetch_era5.py` genera esclusivamente `public/data/era5-grid.json`: rimossa la scrittura della climatologia Open-Meteo provvisoria campionata da ERA5.
+- Aggiunto un test di regressione che vincola i target di scrittura dello script ERA5 e impedisce di reintrodurre riferimenti agli asset climatologici Open-Meteo.
+- Aggiunti test NOAA con rete simulata: coordinate non valide, clamp geografico, esclusione stazioni obsolete, scelta della più vicina, periodo ancorato ai dati disponibili, medie, estremi, valori mancanti e paginazione oltre 1.000 record.
+- Corretto il pareggio degli estremi NOAA: a parità di temperatura viene scelta la data più recente.
+- Verifiche: `node --test` **18/18** e `npx --yes wrangler@4 deploy --dry-run` completati con successo.
 
 ## Deploy Cloudflare (attivo)
 
@@ -77,11 +86,9 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 
 ## Debiti noti / prossimi passi
 
-- Test: `node --test` (parser serie + sync app.js↔lib); CI in `.github/workflows/ci.yml`. Copertura ancora limitata (niente test su cache KV/file, NOAA, Worker end-to-end)
+- Test: `node --test` (parser serie, sync app.js↔lib, protezione asset climatologici e logica NOAA); CI in `.github/workflows/ci.yml`. Copertura ancora limitata su cache KV/file e Worker end-to-end.
 - Dominio custom non configurato (resta su workers.dev)
 - Griglia OM fissa (passo 10°×20°): si può valutare densità maggiore o zoom-dipendente
 - ERA5 va rigenerato periodicamente per restare aggiornato (`scripts/fetch_era5.py`, ora climatologia 1961-1990)
-- Climatologia OM (`om-climatology-1961-1990.json` + `om-climatology.js`): **completa, 306/306 punti reali Open-Meteo** (generata 2026-08-29 con `scripts/gen_om_climatology.mjs`, split a 3 decadi). ⚠️ `scripts/fetch_era5.py` (`write_om_climatology`) **sovrascrive ancora** questi due asset con una versione provvisoria campionata da ERA5: dopo un run di `fetch_era5.py`, rigenerare con `gen_om_climatology.mjs` oppure ripristinare i due file da git prima di committare
-- Verifica headless nel browser (Playwright, 3 modalità) della metrica mappa 1961-1990: fatta solo via API/asset, da rifare nel browser
 - **Mai lanciare `curl`/richieste a `enlil.bar971.workers.dev/api/grid` subito dopo un push su `master`**: se la KV `grid` è vuota e il deploy non è ancora propagato, il worker vecchio ripopola la KV con la metrica vecchia (TTL 12h). Aspettare che il deploy sia live, o `wrangler kv key delete grid --remote` dopo
 - Popup NOAA mostra solo l'ultimo anno: possibile estensione a serie storica della stazione

@@ -59,14 +59,23 @@ Il repo GitHub è collegato a **Workers Builds**: ogni push su `master` triggera
                                   # scrive data/era5-grid.json
    ```
    Il layer ERA5 compare in automatico al prossimo caricamento della pagina.
-   ⚠️ `fetch_era5.py` **sovrascrive** anche `public/data/om-climatology-1961-1990.json`
-   e `om-climatology.js` con una climatologia OM provvisoria campionata da ERA5: quella
-   "vera" (306/306 punti reali Open-Meteo, già committata) si rigenera con
-   `node scripts/gen_om_climatology.mjs`. Dopo un run di `fetch_era5.py`, rigenerarla o
-   ripristinare i due file da git prima di committare.
+   `fetch_era5.py` aggiorna esclusivamente `public/data/era5-grid.json`: la climatologia
+   Open-Meteo resta separata e si rigenera, solo quando necessario, con
+   `node scripts/gen_om_climatology.mjs`.
 
 ## Note
 
 - I token restano solo sul server (env/`.env`, in `.gitignore`): mai nel frontend.
 - Open-Meteo free tier conta ogni location batch come chiamata (~600/min, 10.000/giorno): il server fa chunking con pausa, retry su 429 e snapshot su disco; il frontend standalone usa localStorage come cache.
+
+## Test
+
+```bash
+node --test
+npx --yes wrangler@4 deploy --dry-run
+```
+
+La suite copre parser delle serie, sincronizzazione frontend↔librerie condivise,
+protezione degli asset climatologici e logica NOAA. Restano da coprire in modo
+specifico la cache KV/file e il Worker end-to-end.
 - Fonti senza auth (NASA GISTEMP, HadCRUT5, Berkeley Earth, Open-Meteo) funzionano subito.
