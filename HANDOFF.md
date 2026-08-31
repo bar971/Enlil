@@ -14,6 +14,7 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 | `server.mjs` | Backend: static serving + proxy con cache su file + server HTTP |
 | `worker/index.js` | Cloudflare Worker: stesse rotte, cache su KV, Cron Trigger |
 | `lib/core.mjs` | Logica condivisa server↔worker: griglia, periodi, fetch/retry, Open-Meteo, NOAA (solo API standard, niente `node:`) |
+| `lib/file-cache.mjs` | Primitive della cache su file del backend Node, isolate e testabili senza avviare il server |
 | `lib/series.mjs` | Parser canonici delle serie storiche (fonte per i test; `app.js` ne tiene una copia inline) |
 | `data/gistemp.js` | Snapshot NASA GISTEMP embedded (fallback senza backend) |
 | `public/data/era5-grid.json` | Griglia ERA5 precomputata (10.368 punti, ~500 KB) — generata da script |
@@ -77,6 +78,18 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - Corretto il pareggio degli estremi NOAA: a parità di temperatura viene scelta la data più recente.
 - Verifiche: `node --test` **18/18** e `npx --yes wrangler@4 deploy --dry-run` completati con successo.
 
+### Aggiornamento 2026-08-31 — test cache file e KV
+
+- Estratte le primitive della cache su file in `lib/file-cache.mjs`, mantenendo invariato il comportamento del backend HTTP.
+- Aggiunti test per cache file e KV: hit fresco senza upstream, refresh di entry scaduta, fallback stale su errore upstream e miss senza fallback.
+- Verifica: `node --test` **26/26**.
+
+### Aggiornamento 2026-08-31 — Worker end-to-end
+
+- Aggiunto un harness deterministico dell'entrypoint Worker con binding KV in memoria e ASSETS collegato ai file reali di `public/`.
+- Coperti routing e risposte complete per health/provider, asset statici, ERA5, griglia fresca da KV e NOAA da cache con rate limit.
+- Verifiche: `node --test` **30/30** e bundle Wrangler completato con successo.
+
 ## Deploy Cloudflare (attivo)
 
 - URL: https://enlil.bar971.workers.dev — Worker `enlil` (`worker/index.js`), statici da `public/` (binding `ASSETS`, da dichiarare esplicitamente in `wrangler.jsonc` altrimenti `env.ASSETS` è undefined), cache KV `enlil-cache` id `076d8cde3bef436eabed421aa3e51546` (binding `ENLIL_CACHE`), secret `NOAA_TOKEN`.
@@ -86,8 +99,7 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 
 ## Debiti noti / prossimi passi
 
-- Test: `node --test` (parser serie, sync app.js↔lib, protezione asset climatologici e logica NOAA); CI in `.github/workflows/ci.yml`. Copertura ancora limitata su cache KV/file e Worker end-to-end.
-- Dominio custom non configurato (resta su workers.dev)
+- Test: `node --test` (parser serie, sync app.js↔lib, protezione asset climatologici, logica NOAA, cache file/KV e Worker end-to-end); CI in `.github/workflows/ci.yml`.
 - Griglia OM fissa (passo 10°×20°): si può valutare densità maggiore o zoom-dipendente
 - ERA5 va rigenerato periodicamente per restare aggiornato (`scripts/fetch_era5.py`, ora climatologia 1961-1990)
 - **Mai lanciare `curl`/richieste a `enlil.bar971.workers.dev/api/grid` subito dopo un push su `master`**: se la KV `grid` è vuota e il deploy non è ancora propagato, il worker vecchio ripopola la KV con la metrica vecchia (TTL 12h). Aspettare che il deploy sia live, o `wrangler kv key delete grid --remote` dopo

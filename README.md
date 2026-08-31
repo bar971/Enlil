@@ -76,6 +76,6 @@ npx --yes wrangler@4 deploy --dry-run
 ```
 
 La suite copre parser delle serie, sincronizzazione frontend↔librerie condivise,
-protezione degli asset climatologici e logica NOAA. Restano da coprire in modo
-specifico la cache KV/file e il Worker end-to-end.
+protezione degli asset climatologici, logica NOAA, cache su file/KV (hit, refresh,
+fallback stale e miss) ed entrypoint Worker end-to-end con binding simulati.
 - Fonti senza auth (NASA GISTEMP, HadCRUT5, Berkeley Earth, Open-Meteo) funzionano subito.

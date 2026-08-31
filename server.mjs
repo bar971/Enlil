@@ -22,6 +22,7 @@ import {
   buildGridPayload,
   noaaStationData,
 } from "./lib/core.mjs";
+import { cachedFile, readCache, readStale } from "./lib/file-cache.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -49,41 +50,18 @@ const NOAA_TOKEN = process.env.NOAA_TOKEN || "";
 
 /* ---------------- Cache su file ---------------- */
 
-function readCache(file, ttlMs) {
-  try {
-    const age = Date.now() - fs.statSync(file).mtimeMs;
-    if (age > ttlMs) return null;
-    return fs.readFileSync(file, "utf8");
-  } catch {
-    return null;
-  }
-}
-
-function readStale(file) {
-  try {
-    return fs.readFileSync(file, "utf8");
-  } catch {
-    return null;
-  }
-}
-
 /* Proxy con cache: serve la copia fresca se presente; altrimenti scarica e
  * salva; se l'upstream fallisce ma esiste una copia vecchia, serve quella. */
 async function proxyCached(res, cacheName, ttlMs, url, contentType) {
   const file = path.join(CACHE_DIR, cacheName);
-  const fresh = readCache(file, ttlMs);
-  if (fresh !== null) return send(res, 200, fresh, contentType);
   try {
-    const up = await fetchWithRetry(url);
-    const body = await up.text();
-    fs.writeFileSync(file, body);
-    return send(res, 200, body, contentType);
+    const cached = await cachedFile(file, ttlMs, async () => {
+      const up = await fetchWithRetry(url);
+      return up.text();
+    });
+    if (cached.source === "stale") res.setHeader("X-Enlil-Stale", "1");
+    return send(res, 200, cached.body, contentType);
   } catch (err) {
-    const stale = readStale(file);
-    if (stale !== null) {
-      res.setHeader("X-Enlil-Stale", "1");
-      return send(res, 200, stale, contentType);
-    }
     return sendJson(res, 502, { error: String(err.message || err) });
   }
 }
