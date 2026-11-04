@@ -1,6 +1,6 @@
 # HANDOFF — Enlil (clima globale su mappa mondiale)
 
-> Stato al 2026-08-31 (`master`; climatologia OM 1961-1990 completa 306/306, protezione asset, test NOAA e storico GSOM nel popup integrati). Documento per riprendere il progetto su un'altra macchina o da un altro agente.
+> Stato al 2026-11-04 (`master`; climatologia OM 1961-1990 completa 306/306, storico GSOM nel popup e gestione indisponibilità NOAA con HTTP 503). Documento per riprendere il progetto su un'altra macchina o da un altro agente.
 
 ## Cos'è
 
@@ -110,6 +110,15 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - Lo storico usa GSOM mensile: seleziona una stazione vicina con almeno 30 anni di copertura, esegue al massimo tre richieste da 10 anni e restituisce TAVG annuale; anni con meno di 10 mesi sono esclusi.
 - Il Worker conserva le risposte GSOM in KV per 30 giorni, con chiave per cella 0,1°; il frontend mostra un grafico SVG compatto, senza dipendenze aggiuntive.
 - Verifiche: `node --test` **33/33** e bundle Wrangler completato con successo.
+
+### Aggiornamento 2026-11-04 — indisponibilità NOAA
+
+- Diagnosi live: Enlil risponde, ma la ricerca NOAA dal Worker fallisce con `Upstream HTTP 522 per www.ncei.noaa.gov`; anche dal PC la stessa API va in timeout di connessione, come la homepage NCEI. Il codice osservato è 522, non 552.
+- `lib/core.mjs` gestisce gli errori delle query NOAA condivise: sia il riepilogo GHCND sia lo storico GSOM restituiscono HTTP 503 e “NOAA temporaneamente non raggiungibile. Riprova più tardi.”, su backend Node e Worker. Il dettaglio tecnico resta nei log; il popup mostra già il messaggio restituito dall'API.
+- Gli errori 503 non vengono salvati nella KV. `/api/health` continua a verificare solo la presenza del token NOAA, non la raggiungibilità upstream (chiarito nel README).
+- Test Worker aggiunti per HTTP 522 e timeout su entrambi gli endpoint, inclusa la verifica dell'assenza di cache degli errori.
+- Verifiche: `node --test` **38/38** (34 test principali e 4 sottotest), `git diff --check` e `npx --yes wrangler@4 deploy --dry-run` completati con successo.
+- Pubblicazione tramite push su `master`, collegato a Cloudflare Workers Builds.
 
 ## Deploy Cloudflare (attivo)
 

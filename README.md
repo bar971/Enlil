@@ -21,12 +21,16 @@ Nessuna dipendenza npm: il backend locale è Node puro (`node:http`), il Worker 
 
 ## Backend: endpoint
 
-- `GET /api/health` — stato provider (`noaa`: token presente, `era5`: JSON generato)
+- `GET /api/health` — stato provider (`noaa`: token presente, non verifica la raggiungibilità del servizio; `era5`: JSON generato)
 - `GET /api/grid` — griglia Open-Meteo; snapshot in `data/cache/grid.json` (TTL 12h; se Open-Meteo è in 429 serve lo snapshot datato)
 - `GET /api/gistemp` · `/api/hadcrut5` · `/api/berkeley` — proxy con cache 24h in `data/cache/`
 - `GET /api/noaa/station-data?lat=..&lon=..` — stazione GHCND più vicina + medie TAVG/TMAX/TMIN ultimo anno
 - `GET /api/noaa/station-history?lat=..&lon=..` — storico annuale TAVG di 30 anni dalla stazione GSOM più vicina con copertura sufficiente; richiesto lazy dal popup
 - `GET /api/era5` — serve `data/era5-grid.json` (501 finché non generato)
+
+Se una richiesta a NOAA fallisce (per esempio timeout o HTTP 522), entrambi gli
+endpoint NOAA restituiscono HTTP 503 con il messaggio “NOAA temporaneamente non
+raggiungibile. Riprova più tardi.” Il Worker non salva questi errori nella cache.
 
 ## Autenticazione richiesta (solo 2 fonti)
 

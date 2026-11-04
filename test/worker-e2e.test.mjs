@@ -63,6 +63,31 @@ function harness(entries = {}) {
   };
 }
 
+test("Worker e2e: NOAA non raggiungibile restituisce 503 senza cache degli errori", async (t) => {
+  for (const route of ["station-data", "station-history"]) {
+    for (const failure of ["522", "timeout"]) {
+      await t.test(`${route}: ${failure}`, async (t) => {
+        t.mock.method(globalThis, "fetch", async () => {
+          if (failure === "timeout") throw new DOMException("Connection timed out", "TimeoutError");
+          return new Response("Connection timed out", { status: 522 });
+        });
+        const h = harness();
+        const request = new Request(`https://enlil.test/api/noaa/${route}?lat=45&lon=9`);
+        const response = await worker.fetch(request, h.env, h.ctx);
+        await h.drain();
+
+        assert.equal(response.status, 503);
+        assert.equal(response.headers.get("Cache-Control"), "no-store");
+        assert.deepEqual(await response.json(), {
+          error: "NOAA temporaneamente non raggiungibile. Riprova più tardi.",
+        });
+        assert.equal(await h.env.ENLIL_CACHE.get("noaa:45.0:9.0"), null);
+        assert.equal(await h.env.ENLIL_CACHE.get("noaa-history:45.0:9.0"), null);
+      });
+    }
+  }
+});
+
 test("Worker e2e: health verifica binding, secret e asset ERA5", async (t) => {
   t.mock.method(Date, "now", () => NOW);
   const h = harness();
