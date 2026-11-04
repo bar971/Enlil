@@ -118,7 +118,7 @@ Web app che visualizza il riscaldamento climatico su una cartina mondiale geo-po
 - Gli errori 503 non vengono salvati nella KV. `/api/health` continua a verificare solo la presenza del token NOAA, non la raggiungibilità upstream (chiarito nel README).
 - Test Worker aggiunti per HTTP 522 e timeout su entrambi gli endpoint, inclusa la verifica dell'assenza di cache degli errori.
 - Verifiche: `node --test` **38/38** (34 test principali e 4 sottotest), `git diff --check` e `npx --yes wrangler@4 deploy --dry-run` completati con successo.
-- Pubblicazione tramite push su `master`, collegato a Cloudflare Workers Builds.
+- Commit applicativo `8525d24` pubblicato su `master`. Non risultando ancora avviata una build automatica dopo il push, il deploy dello stesso commit è stato avviato esplicitamente tramite il trigger Workers Builds configurato: build `fbd0f76b-95b5-4146-99a6-f8721def773c`, esito **success**.
 
 ## Deploy Cloudflare (attivo)
 
